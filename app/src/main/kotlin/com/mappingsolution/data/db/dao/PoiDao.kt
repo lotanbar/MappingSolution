@@ -16,6 +16,9 @@ interface PoiDao {
     @Query("SELECT * FROM pois WHERE groupId IS NULL ORDER BY createdAt ASC")
     fun observeOrphans(): Flow<List<PoiEntity>>
 
+    @Query("SELECT COUNT(*) FROM pois WHERE groupId = :groupId")
+    suspend fun countByGroupId(groupId: Long): Int
+
     @Query("SELECT * FROM pois WHERE id = :id")
     suspend fun getById(id: Long): PoiEntity?
 

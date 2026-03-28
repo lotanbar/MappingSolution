@@ -14,6 +14,9 @@ interface RouteDao {
     @Query("SELECT * FROM routes WHERE didUserTapStop = 0")
     suspend fun getIncomplete(): List<RouteEntity>
 
+    @Query("SELECT COUNT(*) FROM routes WHERE groupId = :groupId")
+    suspend fun countByGroupId(groupId: Long): Int
+
     @Query("SELECT * FROM routes WHERE id = :id")
     suspend fun getById(id: Long): RouteEntity?
 

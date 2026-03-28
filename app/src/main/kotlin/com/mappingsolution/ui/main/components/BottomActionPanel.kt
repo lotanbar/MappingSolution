@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -29,21 +30,24 @@ fun BottomActionPanel(
             Icon(
                 imageVector = Icons.Default.AddLocation,
                 contentDescription = "Add POI at current location",
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
+                tint = Color.White,
             )
         }
         IconButton(onClick = onRecordRoute, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.RadioButtonChecked,
                 contentDescription = "Record a route",
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
+                tint = Color.White,
             )
         }
         IconButton(onClick = onOpenLibrary, modifier = Modifier.size(56.dp)) {
             Icon(
                 imageVector = Icons.Default.Folder,
                 contentDescription = "Open library",
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
+                tint = Color.White,
             )
         }
     }

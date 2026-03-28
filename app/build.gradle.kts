@@ -74,6 +74,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.navigation.compose)
 
     // MapLibre
     implementation(libs.maplibre.android)

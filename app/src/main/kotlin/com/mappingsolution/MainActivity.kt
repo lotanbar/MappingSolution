@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.mappingsolution.ui.main.MainScreen
+import com.mappingsolution.ui.navigation.AppNavGraph
 import com.mappingsolution.ui.theme.MappingTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MappingTheme {
-                MainScreen()
+                AppNavGraph()
             }
         }
     }

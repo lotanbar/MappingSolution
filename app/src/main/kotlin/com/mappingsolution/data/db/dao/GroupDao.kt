@@ -13,10 +13,10 @@ interface GroupDao {
     @Query("SELECT * FROM groups WHERE id = :id")
     suspend fun getById(id: Long): GroupEntity?
 
-    @Query("SELECT COUNT(*) FROM groups WHERE name = :name AND id != :excludeId")
+    @Query("SELECT COUNT(*) FROM groups WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND id != :excludeId")
     suspend fun countByName(name: String, excludeId: Long = 0): Int
 
-    @Query("SELECT COUNT(*) FROM groups WHERE description = :desc AND id != :excludeId")
+    @Query("SELECT COUNT(*) FROM groups WHERE LOWER(TRIM(description)) = LOWER(TRIM(:desc)) AND id != :excludeId")
     suspend fun countByDescription(desc: String, excludeId: Long = 0): Int
 
     @Query("SELECT COUNT(*) FROM groups WHERE iconKey = :iconKey AND id != :excludeId")

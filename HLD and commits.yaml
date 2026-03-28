@@ -13,7 +13,6 @@ Mapping App:
 
     action section:
       - Shown at the bottom 20% of the screen.
-      - Can be dragged all the way up to fill 100%.
       - Has the following buttons (as icons, not text):
         - Add a POI in current location:
           - Open the POI screen, where the user fills:
@@ -137,19 +136,17 @@ implementation_commit_order:
     title: Project skeleton + map shell + local DB schema
     scope:
       - app shell
-      - map screen layout (80/20 + draggable panel)
       - local schema for Group/POI/Route
       - repository layer
       - default seed (satellite hybrid + Personal POIs)
     manual_test:
       - launch app fresh, confirm map loads and bottom panel is 20%
-      - drag panel to full height and back down
       - kill and reopen app, confirm layout/defaults persist
     edge_and_error_tests:
       - first launch with no internet: app opens (map can show fallback/no tiles message)
       - corrupt or empty DB bootstrap path: app recreates clean DB and does not crash
 
-  - commit_2:
+  - commit_2:  # ✅ done 2026-03-28
     title: Groups + strict dedup + visibility primitives
     scope:
       - create/edit/delete groups

@@ -15,6 +15,8 @@ class PoiRepository @Inject constructor(private val dao: PoiDao) {
 
     fun observeOrphans(): Flow<List<PoiEntity>> = dao.observeOrphans()
 
+    suspend fun countByGroup(groupId: Long): Int = dao.countByGroupId(groupId)
+
     suspend fun getById(id: Long): PoiEntity? = dao.getById(id)
 
     suspend fun insert(poi: PoiEntity): Long = dao.insert(poi)

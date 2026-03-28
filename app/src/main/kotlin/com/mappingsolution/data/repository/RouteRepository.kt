@@ -15,6 +15,8 @@ class RouteRepository @Inject constructor(private val dao: RouteDao) {
     /** Returns routes where [RouteEntity.didUserTapStop] is false — incomplete recordings. */
     suspend fun getIncomplete(): List<RouteEntity> = dao.getIncomplete()
 
+    suspend fun countByGroup(groupId: Long): Int = dao.countByGroupId(groupId)
+
     suspend fun getById(id: Long): RouteEntity? = dao.getById(id)
 
     suspend fun insert(route: RouteEntity): Long = dao.insert(route)
