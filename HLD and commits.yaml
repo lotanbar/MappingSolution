@@ -1,0 +1,266 @@
+Mapping App:
+  description: An app for recording data and monitoring your trip.
+  Tech Stack - Modern Kotlin
+
+  main screen:
+    map section:
+      - Takes 80% of the screen by default.
+      - Shows map, POI, and routes of choice from the library.
+      - POIs that belong to a group will have that group's color and icon
+      - The default is showing MapTiler satellite hybrid with Personal POIs.
+      - Tapping a POI shows the same data that would be shown when creating a POI (see below), but uneditable. The user can tap an 'edit'
+        button at the bottom to edit the data, then press save. He can also do that via the library.
+
+    action section:
+      - Shown at the bottom 20% of the screen.
+      - Can be dragged all the way up to fill 100%.
+      - Has the following buttons (as icons, not text):
+        - Add a POI in current location:
+          - Open the POI screen, where the user fills:
+            - name
+            - description - optional
+            - group (defines icon and color, groups can be created in the library screen)
+            - add media
+        - Record a route:
+          - First check battery optimization is disabled for this app. Prompt the user if an action is needed.
+          - A name is generated automatically: HH:MM DDDD:MM:YYYY. It will be used as the route's name when autosaving it
+            to handle an incomplete scenario (see full data model below)
+          - A route is incomplete when the user did not tap the stop button to stop the recording, but the recording was forcefully stopped.
+          - The prime example is the app being forcefully killed for some reason. For example, the device ran out of battery.
+          - The key didUserTapStop in the recording's data model will be set to false by default, and when the app starts, it will look for routes bearing that exact value and treat them as incomplete.
+          - Then start recording:
+            - The user can see the recorded route on the map as he progresses.
+            - The record button is replaced with the record pane, which shows:
+              - time elapsed
+              - distance covered
+              - pause button
+              - stop button
+            - Tapping stop opens a screen where the user needs to pick:
+              - name - prefilled with generated name, can be changed by the user
+              - description - optional
+              - group (defines color only, since routes can't show an icon)
+              - no media here
+            - The recording will keep working in the background until the process is killed (which will make the recording incomplete) or stopped by the user
+            - Being stale for long time periods does not affect the recording.
+        - Library:
+          - Where we see routes and personal POIs.
+          - Shows a search bar at the top that searches for groups/POIs/routes.
+          - Add a group button to the right of the search bar, opens a new screen where the user fills:
+            - name
+            - description - optional
+            - icon - when the user taps it, a new screen opens where he can see lots of icons sorted into
+              categories. A third-party icon library is recommended.
+            - color
+            - run a deduplicate algorithm against other groups for each and every value and tell the user with simple input validation
+          - User can import POIs/routes by tapping the import button to the left of the create group button:
+            - Pick a single folder with all data below it via Explorer window.
+            - The data is imported into a group with the imported top folder's name.
+            - Visibility is on by default.
+            - The user can interact with the row as he would with regular content.
+          - Shows collapses for groups with one row per member inside them, and rows below all collapses per orphan.
+          - Tapping a row - group/route/POI opens the edit screen - fields to edit change between fields.
+          - To the right of each row there is an eye icon; tapping it toggles visibility on the map.
+          - We can toggle visibility of routes/POIs and even entire groups if we want.
+          - Incomplete recordings will show a 'broken' icon to the left of the visibility icon.
+          - Tapping it will prompt the user - this is an incomplete recording with those specs (show specs so far).
+          - Would you like to continue the recording? If the user taps yes, simply continue the recording.
+          - The user can manage groups:
+            - Long click a group enters group multiselection mode.
+            - The row is marked, and he can pick other group collapses.
+            - A set of icons will show at the top below the search bar:
+              - trash can - delete the group AND all its items - destructive, requires confirmation on a prompt after a 10-second cooldown.
+              - orphan - delete the group, and leave all items orphaned
+          - The user can manage single rows:
+            - The user long taps any non-grouped row - POI or route, to enter single multiselection mode.
+            - He can select as many as he wants.
+            - An action bar appears at the top with the following icons:
+              - delete - again, destructive, same confirmation prompt
+              - orphan - ungroup those specifically
+              - un-orphan - move selected rows to a group of the user's choice
+
+data models:
+  Group:
+    - id
+    - name
+    - description (optional)
+    - iconKey
+    - color
+    - isVisible
+    - createdAt
+    - updatedAt
+
+  POI:
+    - id
+    - groupId (optional)
+    - name
+    - description (optional)
+    - lat
+    - lng
+    - elevation (optional)
+    - media (array)
+    - isVisible
+    - createdAt
+    - updatedAt
+
+  Route:
+    - id
+    - groupId (optional)
+    - name
+    - description (optional)
+    - isVisible
+    - didUserTapStop
+    - startedAt
+    - stoppedAt (optional)
+    - checkpointAt
+    - distanceMeters
+    - durationSec
+    - points (array) - stores the route geometry (the ordered GPS path that was recorded)
+    - each point in points:
+      - ts
+      - lat
+      - lng
+
+supported import file types:
+  - GPX:
+    - route recordings (tracks/track points)
+    - waypoints (POIs)
+    - planned routes
+  - KML:
+    - placemarks (POIs)
+    - paths/routes
+  - GeoJSON:
+    - points (POIs)
+    - line strings (routes)
+
+implementation_commit_order:
+  - commit_1:
+    title: Project skeleton + map shell + local DB schema
+    scope:
+      - app shell
+      - map screen layout (80/20 + draggable panel)
+      - local schema for Group/POI/Route
+      - repository layer
+      - default seed (satellite hybrid + Personal POIs)
+    manual_test:
+      - launch app fresh, confirm map loads and bottom panel is 20%
+      - drag panel to full height and back down
+      - kill and reopen app, confirm layout/defaults persist
+    edge_and_error_tests:
+      - first launch with no internet: app opens (map can show fallback/no tiles message)
+      - corrupt or empty DB bootstrap path: app recreates clean DB and does not crash
+
+  - commit_2:
+    title: Groups + strict dedup + visibility primitives
+    scope:
+      - create/edit/delete groups
+      - strict dedup for all group fields
+      - icon/color handling
+      - isVisible toggles
+    manual_test:
+      - create 2 valid distinct groups
+      - attempt duplicate creation by one field at a time (name/description/icon/color) and verify rejection
+      - toggle group visibility and confirm map updates
+    edge_and_error_tests:
+      - verify trim/whitespace/case dedup behavior is explicitly defined and enforced
+      - delete group with and without items; warning flow and result are correct
+
+  - commit_3:
+    title: POI CRUD + map rendering + media attach
+    scope:
+      - add POI at current location
+      - POI details view/edit
+      - group icon/color styling on map
+      - media attachments
+      - visibility controls
+    manual_test:
+      - add POI and confirm it appears on map with group style
+      - open POI from map (read-only), tap edit, save changes
+      - add/remove media and reopen POI to confirm persistence
+    edge_and_error_tests:
+      - no location permission: clear error + retry path
+      - invalid coordinates from provider: graceful rejection
+      - large image/video attach failure handling
+
+  - commit_4:
+    title: Route recording core (foreground)
+    scope:
+      - start/pause/resume/stop
+      - generated temporary route name
+      - live polyline drawing
+      - time/distance stats
+      - finalize metadata screen
+    manual_test:
+      - record short route, pause/resume, stop, rename, save
+      - confirm route line + stats + library row persistence
+    edge_and_error_tests:
+      - stop immediately after start: defined tiny/zero-distance behavior
+      - GPS unavailable mid-recording: warning and continued session behavior
+      - second recording attempt while one is active: blocked with message
+
+  - commit_5:
+    title: Background recording + incomplete recovery
+    scope:
+      - background location strategy
+      - screen-off/app-switch behavior
+      - didUserTapStop=false handling
+      - recovery prompt to continue incomplete route
+    manual_test:
+      - start recording, background app for 3-5 minutes, return and verify continuous route
+      - force-kill app during recording, relaunch, verify incomplete marker + continue flow
+    edge_and_error_tests:
+      - battery saver ON behavior (sampling downgrade + user notice)
+      - location permission revoked while recording
+      - recovery prompt cancel path (route remains incomplete and visible)
+
+  - commit_6:
+    title: Library full management UX
+    scope:
+      - search groups/POIs/routes
+      - collapses
+      - row actions
+      - eye toggles
+      - incomplete/broken icon behavior
+      - long-press selection modes
+    manual_test:
+      - search by group, POI, and route names
+      - multi-select groups and run destructive delete + orphan operation
+      - multi-select rows and run delete/orphan/un-orphan to selected group
+    edge_and_error_tests:
+      - 10-second destructive cooldown works and is cancelable
+      - mixed selection invalid states are prevented
+      - parent/child visibility toggle behavior is deterministic
+
+  - commit_7:
+    title: Import pipeline (GPX/KML/GeoJSON)
+    scope:
+      - folder picker import
+      - parse + normalize to internal models
+      - auto-group by top folder
+      - default visible
+      - import diagnostics
+    manual_test:
+      - import one folder containing all 3 formats
+      - confirm POIs/routes appear in imported group and on map
+      - edit imported items like native ones
+    edge_and_error_tests:
+      - unsupported/invalid files are skipped with per-file error report
+      - partial import succeeds (good files imported, bad files logged)
+      - imported-group dedup collisions are handled per strict dedup rule
+
+  - commit_8:
+    title: Hardening + regression pass + final commit
+    scope:
+      - stability fixes
+      - data migration checks
+      - performance pass for large datasets/media
+      - error/recovery polish
+    manual_test:
+      - full flow regression: group -> POI -> route -> library ops -> import
+      - recovery flow regression: kill during recording -> relaunch -> continue -> finalize
+      - visibility/search across native + imported data
+    edge_and_error_tests:
+      - large route (many points), many POIs, many media files
+      - low storage behavior
+      - app upgrade/migration from previous schema version
+
+          
