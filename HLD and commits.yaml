@@ -179,6 +179,27 @@ implementation_commit_order:
       - large image/video attach failure handling
 
   - commit_4:
+    title: POI media gallery + full-screen preview
+    scope:
+      - PoiMediaGallery tile strip (photo/video/audio tiles with thumbnails and duration badges)
+      - MediaPreviewScreen with HorizontalPager, pinch-to-zoom photos, ExoPlayer video/audio
+      - MediaType sealed class + MediaItem model
+      - MediaPreviewViewModel
+      - New nav route poi_media_preview/{poiId}?startIndex={startIndex}
+    manual_test:
+      - open POI with mixed media: confirm tiles show correct thumbnails and duration badges
+      - tap photo tile: confirm full-screen opens at correct index, swipe to adjacent items
+      - pinch-to-zoom on photo: confirm zoom and pan, resets when swiping to next
+      - tap video tile: confirm video plays inline with controls
+      - tap audio tile: confirm audio-only view with play/pause/seek
+      - back button from preview returns to POI detail
+    edge_and_error_tests:
+      - POI with no media: gallery section is hidden
+      - corrupt/missing file: tile shows error placeholder; preview shows error state
+      - very large video: thumbnail extraction does not ANR (runs on IO dispatcher)
+      - rotate device during video playback: player state survives configuration change
+
+  - commit_5:
     title: Route recording core (foreground)
     scope:
       - start/pause/resume/stop
@@ -194,7 +215,7 @@ implementation_commit_order:
       - GPS unavailable mid-recording: warning and continued session behavior
       - second recording attempt while one is active: blocked with message
 
-  - commit_5:
+  - commit_6:
     title: Background recording + incomplete recovery
     scope:
       - background location strategy
@@ -209,7 +230,7 @@ implementation_commit_order:
       - location permission revoked while recording
       - recovery prompt cancel path (route remains incomplete and visible)
 
-  - commit_6:
+  - commit_7:
     title: Library full management UX
     scope:
       - search groups/POIs/routes
@@ -227,7 +248,7 @@ implementation_commit_order:
       - mixed selection invalid states are prevented
       - parent/child visibility toggle behavior is deterministic
 
-  - commit_7:
+  - commit_8:
     title: Import pipeline (GPX/KML/GeoJSON)
     scope:
       - folder picker import
@@ -244,7 +265,7 @@ implementation_commit_order:
       - partial import succeeds (good files imported, bad files logged)
       - imported-group dedup collisions are handled per strict dedup rule
 
-  - commit_8:
+  - commit_9:
     title: Hardening + regression pass + final commit
     scope:
       - stability fixes
