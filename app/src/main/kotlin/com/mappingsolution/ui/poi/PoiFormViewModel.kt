@@ -42,6 +42,7 @@ class PoiFormViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val poiRepository: PoiRepository,
     private val groupRepository: GroupRepository,
+    private val storageManager: com.mappingsolution.data.util.StorageManager,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -92,12 +93,13 @@ class PoiFormViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val added = mutableListOf<String>()
             var error: String? = null
+            val tempDir = storageManager.getTempDir()
             for (uri in uris) {
                 try {
                     val ext = appContext.contentResolver.getType(uri)
                         ?.substringAfterLast('/')
                         ?.let { ".$it" } ?: ""
-                    val dest = File(appContext.filesDir, "poi_media_${System.currentTimeMillis()}$ext")
+                    val dest = File(tempDir, "temp_media_${System.currentTimeMillis()}${System.nanoTime()}$ext")
                     appContext.contentResolver.openInputStream(uri)?.use { input ->
                         dest.outputStream().use { output -> input.copyTo(output) }
                     }
@@ -126,26 +128,27 @@ class PoiFormViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
             try {
-                val mediaJson = toMediaPathsJson(s.mediaPaths)
                 if (_poiId == null) {
-                    poiRepository.insert(
-                        PoiEntity(
-                            name = s.name.trim(),
-                            description = s.description.trim().ifEmpty { null },
-                            groupId = s.groupId,
-                            lat = s.lat,
-                            lng = s.lng,
-                            mediaPaths = mediaJson,
-                        )
+                    val newPoi = PoiEntity(
+                        name = s.name.trim(),
+                        description = s.description.trim().ifEmpty { null },
+                        groupId = s.groupId,
+                        lat = s.lat,
+                        lng = s.lng,
+                        mediaPaths = "[]",
                     )
+                    val id = poiRepository.insert(newPoi)
+                    val finalMediaPaths = finalizeMediaPaths(s.mediaPaths, id)
+                    poiRepository.update(newPoi.copy(id = id, mediaPaths = toMediaPathsJson(finalMediaPaths)))
                 } else {
                     val existing = poiRepository.getById(_poiId) ?: return@launch
+                    val finalMediaPaths = finalizeMediaPaths(s.mediaPaths, _poiId)
                     poiRepository.update(
                         existing.copy(
                             name = s.name.trim(),
                             description = s.description.trim().ifEmpty { null },
                             groupId = s.groupId,
-                            mediaPaths = mediaJson,
+                            mediaPaths = toMediaPathsJson(finalMediaPaths),
                         )
                     )
                 }
@@ -154,6 +157,22 @@ class PoiFormViewModel @Inject constructor(
                 _state.update { it.copy(isSaving = false) }
             }
         }
+    }
+
+    private fun finalizeMediaPaths(paths: List<String>, poiId: Long): List<String> {
+        val finalPaths = mutableListOf<String>()
+        val poiDir = storageManager.getDirForPoi(poiId)
+        for (path in paths) {
+            val file = File(path)
+            if (file.exists() && file.absolutePath.startsWith(storageManager.getTempDir().absolutePath)) {
+                val dest = File(poiDir, file.name)
+                file.renameTo(dest)
+                finalPaths.add(storageManager.toRelativePath(dest))
+            } else {
+                finalPaths.add(path)
+            }
+        }
+        return finalPaths
     }
 
     private fun parseMediaPaths(json: String): List<String> = try {

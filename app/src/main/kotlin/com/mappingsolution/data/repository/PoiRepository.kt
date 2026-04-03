@@ -7,7 +7,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class PoiRepository @Inject constructor(private val dao: PoiDao) {
+class PoiRepository @Inject constructor(
+    private val dao: PoiDao,
+    private val storageManager: com.mappingsolution.data.util.StorageManager
+) {
 
     fun observeAll(): Flow<List<PoiEntity>> = dao.observeAll()
 
@@ -23,9 +26,15 @@ class PoiRepository @Inject constructor(private val dao: PoiDao) {
 
     suspend fun update(poi: PoiEntity) = dao.update(poi.copy(updatedAt = System.currentTimeMillis()))
 
-    suspend fun delete(poi: PoiEntity) = dao.delete(poi)
+    suspend fun delete(poi: PoiEntity) {
+        storageManager.deletePoiFolder(poi.id)
+        dao.delete(poi)
+    }
 
-    suspend fun deleteByIds(ids: List<Long>) = dao.deleteByIds(ids)
+    suspend fun deleteByIds(ids: List<Long>) {
+        ids.forEach { storageManager.deletePoiFolder(it) }
+        dao.deleteByIds(ids)
+    }
 
     suspend fun orphan(ids: List<Long>) = dao.orphan(ids)
 

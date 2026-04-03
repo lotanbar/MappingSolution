@@ -12,6 +12,8 @@ class RouteRepository @Inject constructor(private val dao: RouteDao) {
 
     fun observeAll(): Flow<List<RouteEntity>> = dao.observeAll()
 
+    fun observeOrphans(): Flow<List<RouteEntity>> = dao.observeOrphans()
+
     /** Returns routes where [RouteEntity.didUserTapStop] is false — incomplete recordings. */
     suspend fun getIncomplete(): List<RouteEntity> = dao.getIncomplete()
 

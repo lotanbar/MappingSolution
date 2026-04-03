@@ -26,6 +26,8 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val groups by viewModel.groups.collectAsState()
+    val orphanedPois by viewModel.orphanedPois.collectAsState()
+    val orphanedRoutes by viewModel.orphanedRoutes.collectAsState()
     var deleteTarget by remember { mutableStateOf<GroupEntity?>(null) }
     var deleteWithItems by remember { mutableStateOf<Pair<GroupEntity, DeleteGroupResult.HasItems>?>(null) }
 
@@ -138,6 +140,29 @@ fun LibraryScreen(
                         onDelete = { deleteTarget = group },
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+                if (orphanedPois.isNotEmpty() || orphanedRoutes.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Unassigned Items",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(16.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    items(orphanedPois, key = { "poi-${it.id}" }) { poi ->
+                        // Using a simple Row for display, similar structure to GroupRow would be better but keeping it simple for now
+                        ListItem(
+                            headlineContent = { Text(poi.name) },
+                            leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null) },
+                        )
+                    }
+                    items(orphanedRoutes, key = { "route-${it.id}" }) { route ->
+                        ListItem(
+                            headlineContent = { Text(route.name) },
+                            leadingContent = { Icon(Icons.Default.Route, contentDescription = null) },
+                        )
+                    }
                 }
             }
         }

@@ -18,6 +18,11 @@ object DatabaseModule {
 
     @Provides
     @Singleton
+    fun provideStorageManager(): com.mappingsolution.data.util.StorageManager =
+        com.mappingsolution.data.util.StorageManager()
+
+    @Provides
+    @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         AppDatabase.build(context)
 

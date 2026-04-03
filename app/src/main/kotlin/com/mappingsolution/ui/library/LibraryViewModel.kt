@@ -28,6 +28,12 @@ class LibraryViewModel @Inject constructor(
     val groups: StateFlow<List<GroupEntity>> = groupRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val orphanedPois = poiRepository.observeOrphans()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val orphanedRoutes = routeRepository.observeOrphans()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun toggleVisibility(group: GroupEntity) {
         viewModelScope.launch {
             groupRepository.update(group.copy(isVisible = !group.isVisible))

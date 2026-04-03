@@ -27,6 +27,7 @@ data class PoiDetailState(
 class PoiDetailViewModel @Inject constructor(
     private val poiRepository: PoiRepository,
     private val groupRepository: GroupRepository,
+    private val storageManager: com.mappingsolution.data.util.StorageManager,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -48,7 +49,15 @@ class PoiDetailViewModel @Inject constructor(
             val group = poi.groupId?.let { groupRepository.getById(it) }
             val mediaPaths = try {
                 val arr = JSONArray(poi.mediaPaths)
-                List(arr.length()) { arr.getString(it) }
+                List(arr.length()) { 
+                    val path = arr.getString(it)
+                    // If it's a relative path, resolve it
+                    if (!path.startsWith("/")) {
+                        storageManager.resolvePath(path).absolutePath
+                    } else {
+                        path
+                    }
+                }
             } catch (_: Exception) { emptyList() }
             _state.update {
                 PoiDetailState(poi = poi, group = group, mediaPaths = mediaPaths, isLoading = false)
@@ -77,7 +86,11 @@ class PoiDetailViewModel @Inject constructor(
 
                 // Update database
                 currentState.poi?.let { poi ->
-                    val newJson = JSONArray(newPaths).toString()
+                    val relativePaths = newPaths.map { path ->
+                        val file = java.io.File(path)
+                        storageManager.toRelativePath(file)
+                    }
+                    val newJson = JSONArray(relativePaths).toString()
                     poiRepository.update(poi.copy(mediaPaths = newJson))
                 }
                 

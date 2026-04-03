@@ -11,6 +11,9 @@ interface RouteDao {
     @Query("SELECT * FROM routes ORDER BY startedAt ASC")
     fun observeAll(): Flow<List<RouteEntity>>
 
+    @Query("SELECT * FROM routes WHERE groupId IS NULL ORDER BY startedAt ASC")
+    fun observeOrphans(): Flow<List<RouteEntity>>
+
     @Query("SELECT * FROM routes WHERE didUserTapStop = 0")
     suspend fun getIncomplete(): List<RouteEntity>
 
