@@ -45,8 +45,9 @@ class PoiFormViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val poiId: Long? = savedStateHandle.get<Long>("poiId")?.takeIf { it > 0 }
-    val isEditing: Boolean get() = poiId != null
+    private val _poiId: Long? = savedStateHandle.get<Long>("poiId")?.takeIf { it > 0 }
+    val poiId: Long? get() = _poiId
+    val isEditing: Boolean get() = _poiId != null
 
     val groups: StateFlow<List<GroupEntity>> = groupRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -61,7 +62,7 @@ class PoiFormViewModel @Inject constructor(
     val state: StateFlow<PoiFormState> = _state.asStateFlow()
 
     init {
-        poiId?.let { id ->
+        _poiId?.let { id ->
             viewModelScope.launch {
                 val poi = poiRepository.getById(id)
                 if (poi != null) {
@@ -126,7 +127,7 @@ class PoiFormViewModel @Inject constructor(
             _state.update { it.copy(isSaving = true) }
             try {
                 val mediaJson = toMediaPathsJson(s.mediaPaths)
-                if (poiId == null) {
+                if (_poiId == null) {
                     poiRepository.insert(
                         PoiEntity(
                             name = s.name.trim(),
@@ -138,7 +139,7 @@ class PoiFormViewModel @Inject constructor(
                         )
                     )
                 } else {
-                    val existing = poiRepository.getById(poiId) ?: return@launch
+                    val existing = poiRepository.getById(_poiId) ?: return@launch
                     poiRepository.update(
                         existing.copy(
                             name = s.name.trim(),

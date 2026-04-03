@@ -17,6 +17,7 @@ import com.mappingsolution.ui.library.LibraryScreen
 import com.mappingsolution.ui.main.MainScreen
 import com.mappingsolution.ui.poi.PoiDetailScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
+import com.mappingsolution.ui.poi.media.MediaPreviewScreen
 
 private const val ROUTE_MAIN = "main"
 private const val ROUTE_LIBRARY = "library"
@@ -25,10 +26,12 @@ private const val ROUTE_GROUP_FORM_EDIT = "group_form/{groupId}"
 private const val ROUTE_ICON_PICKER = "icon_picker"
 private const val ROUTE_POI_FORM_NEW = "poi_form_new?lat={lat}&lng={lng}"
 private const val ROUTE_POI_DETAIL = "poi_detail/{poiId}"
+private const val ROUTE_POI_MEDIA_PREVIEW = "poi_media_preview/{poiId}?startIndex={startIndex}"
 private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
 
 private const val KEY_GROUP_ID = "groupId"
 private const val KEY_POI_ID = "poiId"
+private const val KEY_START_INDEX = "startIndex"
 private const val KEY_LAT = "lat"
 private const val KEY_LNG = "lng"
 private const val KEY_SELECTED_ICON = "selected_icon"
@@ -61,6 +64,10 @@ fun AppNavGraph() {
         ) {
             PoiFormScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onNavigateToMediaPreview = { poiId, index, paths ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
+                    navController.navigate("poi_media_preview/$poiId?startIndex=$index")
+                },
                 onCreateGroup = { navController.navigate(ROUTE_GROUP_FORM) },
             )
         }
@@ -74,7 +81,23 @@ fun AppNavGraph() {
                 onNavigateToEdit = { poiId ->
                     navController.navigate("poi_form_edit/$poiId")
                 },
+                onOpenMediaPreview = { poiId, index, paths ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
+                    navController.navigate("poi_media_preview/$poiId?startIndex=$index")
+                },
             )
+        }
+
+        composable(
+            route = ROUTE_POI_MEDIA_PREVIEW,
+            arguments = listOf(
+                navArgument(KEY_POI_ID) { type = NavType.LongType },
+                navArgument(KEY_START_INDEX) { type = NavType.IntType; defaultValue = 0 },
+            ),
+        ) { backStackEntry ->
+            val startIndex = backStackEntry.arguments?.getInt(KEY_START_INDEX) ?: 0
+            val paths = navController.previousBackStackEntry?.savedStateHandle?.get<List<String>>("media_paths") ?: emptyList()
+            MediaPreviewScreen(paths = paths, startIndex = startIndex)
         }
 
         composable(
@@ -83,6 +106,10 @@ fun AppNavGraph() {
         ) {
             PoiFormScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onNavigateToMediaPreview = { poiId, index, paths ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
+                    navController.navigate("poi_media_preview/$poiId?startIndex=$index")
+                },
                 onCreateGroup = { navController.navigate(ROUTE_GROUP_FORM) },
             )
         }

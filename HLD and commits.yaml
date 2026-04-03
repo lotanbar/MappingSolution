@@ -200,6 +200,19 @@ implementation_commit_order:
       - rotate device during video playback: player state survives configuration change
 
   - commit_5:
+    title: Robust file system storage architecture
+    scope:
+      - Establish hierarchical internal storage structure (/media/pois, /imports, /exports, /temp)
+      - Migrate media storage logic to relative pathing
+      - Implement recursive cleanup helpers for POI media deletion
+    manual_test:
+      - Verify media files are created in /media/pois/{poi_id}/
+      - Verify media deletion clears the POI-specific directory
+    edge_and_error_tests:
+      - File system full/permission denied scenarios
+      - Media path migration from flat to hierarchical
+
+  - commit_6:
     title: Route recording core (foreground)
     scope:
       - start/pause/resume/stop
@@ -215,7 +228,7 @@ implementation_commit_order:
       - GPS unavailable mid-recording: warning and continued session behavior
       - second recording attempt while one is active: blocked with message
 
-  - commit_6:
+  - commit_7:
     title: Background recording + incomplete recovery
     scope:
       - background location strategy
@@ -230,7 +243,7 @@ implementation_commit_order:
       - location permission revoked while recording
       - recovery prompt cancel path (route remains incomplete and visible)
 
-  - commit_7:
+  - commit_8:
     title: Library full management UX
     scope:
       - search groups/POIs/routes
@@ -248,7 +261,7 @@ implementation_commit_order:
       - mixed selection invalid states are prevented
       - parent/child visibility toggle behavior is deterministic
 
-  - commit_8:
+  - commit_9:
     title: Import pipeline (GPX/KML/GeoJSON)
     scope:
       - folder picker import
@@ -265,7 +278,7 @@ implementation_commit_order:
       - partial import succeeds (good files imported, bad files logged)
       - imported-group dedup collisions are handled per strict dedup rule
 
-  - commit_9:
+  - commit_10:
     title: Hardening + regression pass + final commit
     scope:
       - stability fixes
@@ -280,5 +293,3 @@ implementation_commit_order:
       - large route (many points), many POIs, many media files
       - low storage behavior
       - app upgrade/migration from previous schema version
-
-          

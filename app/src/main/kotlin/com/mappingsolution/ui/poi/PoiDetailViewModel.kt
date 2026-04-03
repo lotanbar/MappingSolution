@@ -36,6 +36,10 @@ class PoiDetailViewModel @Inject constructor(
     val state: StateFlow<PoiDetailState> = _state.asStateFlow()
 
     init {
+        loadPoi()
+    }
+
+    private fun loadPoi() {
         viewModelScope.launch {
             val poi = poiRepository.getById(poiId) ?: run {
                 _state.update { it.copy(isLoading = false) }
@@ -48,6 +52,36 @@ class PoiDetailViewModel @Inject constructor(
             } catch (_: Exception) { emptyList() }
             _state.update {
                 PoiDetailState(poi = poi, group = group, mediaPaths = mediaPaths, isLoading = false)
+            }
+        }
+    }
+
+    fun deletePoi(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            _state.value.poi?.let {
+                poiRepository.delete(it)
+                onDeleted()
+            }
+        }
+    }
+
+    fun removeMediaItem(index: Int) {
+        viewModelScope.launch {
+            val currentState = _state.value
+            val newPaths = currentState.mediaPaths.toMutableList()
+            if (index in newPaths.indices) {
+                val pathToRemove = newPaths.removeAt(index)
+                
+                // Delete actual file
+                runCatching { java.io.File(pathToRemove).delete() }
+
+                // Update database
+                currentState.poi?.let { poi ->
+                    val newJson = JSONArray(newPaths).toString()
+                    poiRepository.update(poi.copy(mediaPaths = newJson))
+                }
+                
+                _state.update { it.copy(mediaPaths = newPaths) }
             }
         }
     }

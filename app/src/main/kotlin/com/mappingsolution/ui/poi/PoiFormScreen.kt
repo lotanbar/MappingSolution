@@ -62,12 +62,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.model.MediaItem
+import com.mappingsolution.data.model.MediaType
+import com.mappingsolution.ui.poi.media.PoiMediaGallery
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PoiFormScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToMediaPreview: (poiId: Long, index: Int, paths: List<String>) -> Unit = { _, _, _ -> },
     onCreateGroup: () -> Unit = {},
     viewModel: PoiFormViewModel = hiltViewModel(),
 ) {
@@ -256,82 +260,68 @@ fun PoiFormScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Media", style = MaterialTheme.typography.labelMedium)
-                    state.mediaPaths.forEach { path ->
-                        MediaAttachmentRow(
-                            path = path,
-                            onRemove = { viewModel.removeMediaPath(path) },
-                        )
-                    }
-                    if (state.mediaError != null) {
-                        Text(
-                            text = state.mediaError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+                    
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { mediaLauncher.launch("*/*") },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(
-                                Icons.Default.AttachFile,
-                                contentDescription = "Attach file",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                         OutlinedButton(
                             onClick = {
                                 launchWithCamera {
                                     val file = File(context.filesDir, "poi_photo_${System.currentTimeMillis()}.jpg")
-                                    val uri = FileProvider.getUriForFile(
-                                        context, "${context.packageName}.fileprovider", file
-                                    )
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                     pendingPhotoUri = uri
                                     photoLauncher.launch(uri)
                                 }
                             },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(
-                                Icons.Default.PhotoCamera,
-                                contentDescription = "Take photo",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                         OutlinedButton(
                             onClick = {
                                 launchWithCamera {
                                     val file = File(context.filesDir, "poi_video_${System.currentTimeMillis()}.mp4")
-                                    val uri = FileProvider.getUriForFile(
-                                        context, "${context.packageName}.fileprovider", file
-                                    )
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                     pendingVideoUri = uri
                                     videoLauncher.launch(uri)
                                 }
                             },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(
-                                Icons.Default.Videocam,
-                                contentDescription = "Take video",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
                         OutlinedButton(
-                            onClick = {
-                                audioLauncher.launch(Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION))
-                            },
+                            onClick = { audioLauncher.launch(Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION)) },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(
-                                Icons.Default.Mic,
-                                contentDescription = "Record audio",
-                                modifier = Modifier.size(20.dp),
-                            )
+                            Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(20.dp))
                         }
+                    }
+
+                    if (state.mediaPaths.isNotEmpty()) {
+                        val mediaItems = state.mediaPaths.mapIndexed { index, path ->
+                            com.mappingsolution.data.model.MediaUtils.createMediaItem(path, index)
+                        }
+                        PoiMediaGallery(
+                            mediaItems = mediaItems,
+                            onItemClick = { index -> onNavigateToMediaPreview(viewModel.poiId ?: 0L, index, state.mediaPaths) },
+                            onRemoveItem = { index -> viewModel.removeMediaPath(state.mediaPaths[index]) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (state.mediaError != null) {
+                        Text(
+                            text = state.mediaError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }
@@ -366,10 +356,7 @@ fun PoiFormScreen(
 
 @Composable
 private fun MediaAttachmentRow(path: String, onRemove: () -> Unit) {
-    val isVideo = path.endsWith(".mp4", ignoreCase = true)
-            || path.endsWith(".3gp", ignoreCase = true)
-            || path.endsWith(".mkv", ignoreCase = true)
-            || path.endsWith(".webm", ignoreCase = true)
+    val isVideo = com.mappingsolution.data.model.MediaUtils.isVideo(path)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
