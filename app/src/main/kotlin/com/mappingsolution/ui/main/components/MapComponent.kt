@@ -28,8 +28,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.gson.JsonObject
 import com.mappingsolution.BuildConfig
 import com.mappingsolution.createPinBitmap
-import com.mappingsolution.data.db.entity.GroupEntity
-import com.mappingsolution.data.db.entity.PoiEntity
+import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.recording.RecordingPoint
 import com.mappingsolution.ui.common.IconCatalog
 import org.maplibre.android.MapLibre
@@ -90,11 +90,13 @@ private fun createPoiPin(
 
 @Composable
 fun MapComponent(
-    pois: List<PoiEntity> = emptyList(),
-    groups: List<GroupEntity> = emptyList(),
+    pois: List<Poi> = emptyList(),
+    groups: List<Group> = emptyList(),
     liveRoutePoints: List<RecordingPoint> = emptyList(),
     flyToLocation: Pair<Double, Double>? = null,
-    onPoiTapped: (Long) -> Unit = {},
+    onPoiTapped: (String) -> Unit = {},
+    onMapReady: (MapLibreMap) -> Unit = {},
+    onMapDisposed: () -> Unit = {},
     onMapError: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -120,7 +122,7 @@ fun MapComponent(
         val bitmaps = mutableMapOf<String, Bitmap>()
         groups.forEach { group ->
             val painter = painters[group.iconKey] ?: painters["place"]!!
-            bitmaps[group.id.toString()] = createPoiPin(group.color, painter, density, layoutDirection)
+            bitmaps[group.id] = createPoiPin(group.color, painter, density, layoutDirection)
         }
         bitmaps["default"] = createPoiPin("#2196F3", painters["place"]!!, density, layoutDirection)
         bitmaps
@@ -138,7 +140,10 @@ fun MapComponent(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            onMapDisposed()
+        }
     }
 
     // Update style images when groupBitmaps change
@@ -227,7 +232,7 @@ fun MapComponent(
                             "poi-symbols",
                         )
                         if (hit.isNotEmpty()) {
-                            val poiId = hit[0].getNumberProperty("poiId")?.toLong()
+                            val poiId = hit[0].getStringProperty("poiId")
                             if (poiId != null) {
                                 onPoiTappedRef.value(poiId)
                                 return@addOnMapClickListener true
@@ -236,6 +241,7 @@ fun MapComponent(
                         false
                     }
                     styleReady.value = true
+                    onMapReady(map)
                 }
             }
             mapView

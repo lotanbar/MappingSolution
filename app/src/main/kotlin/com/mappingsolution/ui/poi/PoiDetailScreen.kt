@@ -48,8 +48,8 @@ import java.util.Locale
 @Composable
 fun PoiDetailScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToEdit: (poiId: Long) -> Unit,
-    onOpenMediaPreview: (poiId: Long, index: Int, paths: List<String>) -> Unit,
+    onNavigateToEdit: (poiId: String) -> Unit,
+    onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
     viewModel: PoiDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()

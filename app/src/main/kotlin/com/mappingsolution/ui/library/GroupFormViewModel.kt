@@ -3,9 +3,9 @@ package com.mappingsolution.ui.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mappingsolution.data.db.entity.GroupEntity
-import com.mappingsolution.data.repository.DuplicateFieldError
-import com.mappingsolution.data.repository.GroupRepository
+import com.mappingsolution.data.fs.DuplicateFieldError
+import com.mappingsolution.data.fs.GroupFileRepository
+import com.mappingsolution.data.model.Group
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,11 +30,11 @@ data class GroupFormState(
 
 @HiltViewModel
 class GroupFormViewModel @Inject constructor(
-    private val groupRepository: GroupRepository,
+    private val groupRepository: GroupFileRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
-    private val groupId: Long? = savedStateHandle.get<Long>("groupId")?.takeIf { it > 0 }
+    private val groupId: String? = savedStateHandle.get<String>("groupId")?.takeIf { it.isNotEmpty() }
 
     val isEditing: Boolean get() = groupId != null
 
@@ -75,15 +75,15 @@ class GroupFormViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _state.update { it.copy(isSaving = true) }
-            val entity = GroupEntity(
-                id = groupId ?: 0,
+            val group = Group(
+                id = groupId ?: "",
                 name = s.name.trim(),
                 description = s.description.trim().ifEmpty { null },
                 iconKey = s.iconKey,
                 color = s.color,
             )
-            val result = if (groupId == null) groupRepository.insert(entity)
-                         else groupRepository.update(entity)
+            val result = if (groupId == null) groupRepository.insert(group)
+                         else groupRepository.update(group)
 
             result.fold(
                 onSuccess = { onSuccess() },

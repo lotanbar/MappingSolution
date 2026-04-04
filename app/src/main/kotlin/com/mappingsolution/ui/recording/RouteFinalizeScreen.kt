@@ -46,7 +46,7 @@ private const val DISCARD_COOLDOWN_SEC = 5
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RouteFinalizeScreen(
-    routeId: Long,
+    routeId: String,
     onDone: () -> Unit,
     viewModel: RouteFinalizeViewModel = hiltViewModel(),
 ) {
@@ -82,7 +82,7 @@ fun RouteFinalizeScreen(
             )
         }
     ) { innerPadding ->
-        if (state.routeId == 0L) {
+        if (state.routeId.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,

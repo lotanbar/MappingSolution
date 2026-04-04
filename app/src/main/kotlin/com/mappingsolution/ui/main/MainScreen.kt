@@ -58,8 +58,8 @@ import kotlin.coroutines.resume
 fun MainScreen(
     onOpenLibrary: () -> Unit,
     onAddPoi: (lat: Double, lng: Double) -> Unit,
-    onPoiTapped: (poiId: Long) -> Unit,
-    onNavigateToFinalize: (routeId: Long) -> Unit = {},
+    onPoiTapped: (poiId: String) -> Unit,
+    onNavigateToFinalize: (routeId: String) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel(),
     recordingViewModel: RecordingViewModel = hiltViewModel(),
 ) {
@@ -171,6 +171,8 @@ fun MainScreen(
                     onMapError = { mapError = it },
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
                     flyToLocation = flyToTarget,
+                    onMapReady = { map -> viewModel.mapHolder.register(map) },
+                    onMapDisposed = { viewModel.mapHolder.unregister() },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (mapError != null) {

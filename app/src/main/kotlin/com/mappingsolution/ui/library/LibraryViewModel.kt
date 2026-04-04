@@ -2,10 +2,10 @@ package com.mappingsolution.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mappingsolution.data.db.entity.GroupEntity
-import com.mappingsolution.data.repository.GroupRepository
-import com.mappingsolution.data.repository.PoiRepository
-import com.mappingsolution.data.repository.RouteRepository
+import com.mappingsolution.data.fs.GroupFileRepository
+import com.mappingsolution.data.fs.PoiFileRepository
+import com.mappingsolution.data.fs.RouteFileRepository
+import com.mappingsolution.data.model.Group
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,12 +20,12 @@ sealed class DeleteGroupResult {
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val groupRepository: GroupRepository,
-    private val poiRepository: PoiRepository,
-    private val routeRepository: RouteRepository,
+    private val groupRepository: GroupFileRepository,
+    private val poiRepository: PoiFileRepository,
+    private val routeRepository: RouteFileRepository,
 ) : ViewModel() {
 
-    val groups: StateFlow<List<GroupEntity>> = groupRepository.observeAll()
+    val groups: StateFlow<List<Group>> = groupRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val orphanedPois = poiRepository.observeOrphans()
@@ -34,15 +34,13 @@ class LibraryViewModel @Inject constructor(
     val allRoutes = routeRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun toggleVisibility(group: GroupEntity) {
+    fun toggleVisibility(group: Group) {
         viewModelScope.launch {
             groupRepository.update(group.copy(isVisible = !group.isVisible))
         }
     }
 
-    /** Checks for items before deleting. Calls [onResult] with [DeleteGroupResult.HasItems] if
-     *  the group is not empty, or [DeleteGroupResult.Done] if already deleted. */
-    fun requestDelete(group: GroupEntity, onResult: (DeleteGroupResult) -> Unit) {
+    fun requestDelete(group: Group, onResult: (DeleteGroupResult) -> Unit) {
         viewModelScope.launch {
             val poiCount = poiRepository.countByGroup(group.id)
             if (poiCount > 0) {
@@ -54,8 +52,14 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Deletes the group; Room's FK SET_NULL propagates to its POIs and routes (orphaning them). */
-    fun deleteGroupOrphanItems(group: GroupEntity) {
-        viewModelScope.launch { groupRepository.delete(group) }
+    fun deleteGroupOrphanItems(group: Group) {
+        viewModelScope.launch {
+            poiRepository.orphan(
+                poiRepository.observeByGroup(group.id)
+                    .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+                    .value.map { it.id }
+            )
+            groupRepository.delete(group)
+        }
     }
 }

@@ -1,8 +1,8 @@
 package com.mappingsolution.data.recording
 
-import com.mappingsolution.data.db.entity.RouteEntity
-import com.mappingsolution.data.db.entity.RoutePointEntity
-import com.mappingsolution.data.repository.RouteRepository
+import com.mappingsolution.data.fs.RouteFileRepository
+import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.model.RoutePoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,7 +23,7 @@ private const val DEFAULT_ROUTE_COLOR = "#FFFF5722"
 
 @Singleton
 class RecordingRepository @Inject constructor(
-    private val routeRepository: RouteRepository,
+    private val routeFileRepository: RouteFileRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -33,19 +33,15 @@ class RecordingRepository @Inject constructor(
     private val _events = MutableSharedFlow<RecordingEvent>(replay = 1, extraBufferCapacity = 0)
     val events: SharedFlow<RecordingEvent> = _events.asSharedFlow()
 
-    /** Call after consuming a [RecordingEvent.Stopped] to clear the replay cache. */
     fun consumeStoppedEvent() { _events.resetReplayCache() }
 
-    fun updateState(state: RecordingState) {
-        _state.value = state
-    }
+    fun updateState(state: RecordingState) { _state.value = state }
 
-    /** Creates a new incomplete route row and returns its id and auto-generated name. */
-    suspend fun createRoute(): Pair<Long, String> {
+    suspend fun createRoute(): Pair<String, String> {
         val name = SimpleDateFormat("dd/MM/yyyy-HH:mm", Locale.getDefault()).format(Date())
         val now = System.currentTimeMillis()
-        val id = routeRepository.insert(
-            RouteEntity(
+        val id = routeFileRepository.insert(
+            Route(
                 name = name,
                 color = DEFAULT_ROUTE_COLOR,
                 didUserTapStop = false,
@@ -56,41 +52,29 @@ class RecordingRepository @Inject constructor(
         return id to name
     }
 
-    suspend fun persistPointsSync(routeId: Long, points: List<RecordingPoint>) {
+    suspend fun persistPointsSync(routeId: String, points: List<RecordingPoint>) {
         if (points.isEmpty()) return
-        val entities = points.mapIndexed { i, pt ->
-            RoutePointEntity(
-                routeId = routeId,
-                ts = pt.ts,
-                lat = pt.lat,
-                lng = pt.lng,
-                orderIndex = i,
-            )
-        }
-        routeRepository.appendPoints(entities)
+        routeFileRepository.appendPoints(
+            routeId,
+            points.map { RoutePoint(ts = it.ts, lat = it.lat, lng = it.lng) },
+        )
     }
 
-    fun persistPoints(routeId: Long, points: List<RecordingPoint>, orderOffset: Int) {
+    fun persistPoints(routeId: String, points: List<RecordingPoint>, orderOffset: Int) {
         if (points.isEmpty()) return
         scope.launch {
-            val entities = points.mapIndexed { i, pt ->
-                RoutePointEntity(
-                    routeId = routeId,
-                    ts = pt.ts,
-                    lat = pt.lat,
-                    lng = pt.lng,
-                    orderIndex = orderOffset + i,
-                )
-            }
-            routeRepository.appendPoints(entities)
+            routeFileRepository.appendPoints(
+                routeId,
+                points.map { RoutePoint(ts = it.ts, lat = it.lat, lng = it.lng) }
+            )
         }
     }
 
-    suspend fun finalizeStop(routeId: Long, distanceMeters: Double, durationSec: Long) {
-        val existing = routeRepository.getById(routeId) ?: return
+    suspend fun finalizeStop(routeId: String, distanceMeters: Double, durationSec: Long) {
+        val existing = routeFileRepository.getById(routeId) ?: return
         val dateStr = SimpleDateFormat("dd/MM/yyyy-HH:mm", Locale.getDefault()).format(Date(existing.startedAt))
         val fullName = "$dateStr-${formatDuration(durationSec)}-${formatDistance(distanceMeters)}"
-        routeRepository.update(
+        routeFileRepository.update(
             existing.copy(
                 name = fullName,
                 didUserTapStop = true,
@@ -103,10 +87,10 @@ class RecordingRepository @Inject constructor(
         _events.emit(RecordingEvent.Stopped(routeId))
     }
 
+    suspend fun getIncompleteRoutes() = routeFileRepository.getIncomplete()
+
     private fun formatDuration(sec: Long): String {
-        val h = sec / 3600
-        val m = (sec % 3600) / 60
-        val s = sec % 60
+        val h = sec / 3600; val m = (sec % 3600) / 60; val s = sec % 60
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
     }
 

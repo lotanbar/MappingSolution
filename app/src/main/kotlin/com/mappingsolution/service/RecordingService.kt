@@ -16,10 +16,12 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.mappingsolution.MainActivity
+import com.mappingsolution.data.map.MapHolder
 import com.mappingsolution.data.recording.RecordingEvent
 import com.mappingsolution.data.recording.RecordingPoint
 import com.mappingsolution.data.recording.RecordingRepository
 import com.mappingsolution.data.recording.RecordingState
+import com.mappingsolution.data.recording.processing.SmartTrackProcessor
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,12 +39,15 @@ import javax.inject.Inject
 class RecordingService : Service() {
 
     @Inject lateinit var recordingRepository: RecordingRepository
+    @Inject lateinit var smartTrackProcessor: SmartTrackProcessor
+    @Inject lateinit var mapHolder: MapHolder
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var tickerJob: Job? = null
     private val pendingPoints = mutableListOf<RecordingPoint>()
     private var flushedPointCount = 0
     private var lastLocation: Location? = null
+    private var lastEmittedPoint: RecordingPoint? = null
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) = onNewLocation(location)
@@ -97,6 +102,9 @@ class RecordingService : Service() {
     private suspend fun handleStart() {
         val (routeId, name) = recordingRepository.createRoute()
         val now = System.currentTimeMillis()
+        smartTrackProcessor.reset()
+        lastLocation = null
+        lastEmittedPoint = null
         recordingRepository.updateState(
             RecordingState.Active(
                 routeId = routeId,
@@ -166,28 +174,44 @@ class RecordingService : Service() {
     private fun onNewLocation(location: Location) {
         val current = recordingRepository.state.value as? RecordingState.Active ?: return
         if (current.isPaused) return
-        // Ignore inaccurate fixes (GPS drift when standing still often has poor accuracy)
+        // Pre-filter: reject inaccurate fixes before entering the pipeline
         if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_METERS) return
 
+        // Pre-filter: reject micro-jitter based on raw GPS displacement
         val last = lastLocation
-        val addedDistance = if (last != null) haversineMeters(last.latitude, last.longitude, location.latitude, location.longitude) else 0.0
-        // Skip micro-jitter: only count real movement
-        if (last != null && addedDistance < MIN_MOVEMENT_METERS) return
+        val rawDist = if (last != null)
+            haversineMeters(last.latitude, last.longitude, location.latitude, location.longitude)
+        else 0.0
+        if (last != null && rawDist < MIN_MOVEMENT_METERS) return
         lastLocation = location
 
-        val point = RecordingPoint(ts = System.currentTimeMillis(), lat = location.latitude, lng = location.longitude)
-        pendingPoints.add(point)
+        scope.launch {
+            // Run Kalman → road snap → mode hysteresis on the captured location
+            val point = smartTrackProcessor.process(location, mapHolder.map)
 
-        val newPoints = current.points + point
-        val newDistance = current.distanceMeters + addedDistance
-        recordingRepository.updateState(current.copy(points = newPoints, distanceMeters = newDistance))
+            // Accumulate distance from the last emitted (smoothed/snapped) point
+            val prevEmit = lastEmittedPoint
+            val addedDistance = if (prevEmit != null)
+                haversineMeters(prevEmit.lat, prevEmit.lng, point.lat, point.lng)
+            else 0.0
+            lastEmittedPoint = point
 
-        if (pendingPoints.size >= 20) {
-            flushPendingPoints(current.routeId)
+            // Re-read state; it may have changed while awaiting the road query
+            val st = recordingRepository.state.value as? RecordingState.Active ?: return@launch
+            if (st.isPaused) return@launch
+
+            pendingPoints.add(point)
+            val newPoints = st.points + point
+            val newDistance = st.distanceMeters + addedDistance
+            recordingRepository.updateState(st.copy(points = newPoints, distanceMeters = newDistance))
+
+            if (pendingPoints.size >= 20) {
+                flushPendingPoints(st.routeId)
+            }
         }
     }
 
-    private fun flushPendingPoints(routeId: Long) {
+    private fun flushPendingPoints(routeId: String) {
         if (pendingPoints.isEmpty()) return
         val toFlush = pendingPoints.toList()
         pendingPoints.clear()

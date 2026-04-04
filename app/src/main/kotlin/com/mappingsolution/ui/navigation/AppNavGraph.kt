@@ -49,15 +49,9 @@ fun AppNavGraph() {
         composable(ROUTE_MAIN) {
             MainScreen(
                 onOpenLibrary = { navController.navigate(ROUTE_LIBRARY) },
-                onAddPoi = { lat, lng ->
-                    navController.navigate("poi_form_new?lat=$lat&lng=$lng")
-                },
-                onPoiTapped = { poiId ->
-                    navController.navigate("poi_detail/$poiId")
-                },
-                onNavigateToFinalize = { routeId ->
-                    navController.navigate("route_finalize/$routeId")
-                },
+                onAddPoi = { lat, lng -> navController.navigate("poi_form_new?lat=$lat&lng=$lng") },
+                onPoiTapped = { poiId -> navController.navigate("poi_detail/$poiId") },
+                onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
             )
         }
 
@@ -80,13 +74,11 @@ fun AppNavGraph() {
 
         composable(
             route = ROUTE_POI_DETAIL,
-            arguments = listOf(navArgument(KEY_POI_ID) { type = NavType.LongType }),
+            arguments = listOf(navArgument(KEY_POI_ID) { type = NavType.StringType }),
         ) {
             PoiDetailScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToEdit = { poiId ->
-                    navController.navigate("poi_form_edit/$poiId")
-                },
+                onNavigateToEdit = { poiId -> navController.navigate("poi_form_edit/$poiId") },
                 onOpenMediaPreview = { poiId, index, paths ->
                     navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
                     navController.navigate("poi_media_preview/$poiId?startIndex=$index")
@@ -97,7 +89,7 @@ fun AppNavGraph() {
         composable(
             route = ROUTE_POI_MEDIA_PREVIEW,
             arguments = listOf(
-                navArgument(KEY_POI_ID) { type = NavType.LongType },
+                navArgument(KEY_POI_ID) { type = NavType.StringType },
                 navArgument(KEY_START_INDEX) { type = NavType.IntType; defaultValue = 0 },
             ),
         ) { backStackEntry ->
@@ -108,7 +100,7 @@ fun AppNavGraph() {
 
         composable(
             route = ROUTE_POI_FORM_EDIT,
-            arguments = listOf(navArgument(KEY_POI_ID) { type = NavType.LongType }),
+            arguments = listOf(navArgument(KEY_POI_ID) { type = NavType.StringType }),
         ) {
             PoiFormScreen(
                 onNavigateBack = { navController.popBackStack() },
@@ -130,17 +122,14 @@ fun AppNavGraph() {
 
         composable(ROUTE_GROUP_FORM) { backStackEntry ->
             val vm: GroupFormViewModel = hiltViewModel(backStackEntry)
-
             val selectedIcon = backStackEntry.savedStateHandle
-                .getStateFlow(KEY_SELECTED_ICON, "")
-                .collectAsState()
+                .getStateFlow(KEY_SELECTED_ICON, "").collectAsState()
             LaunchedEffect(selectedIcon.value) {
                 if (selectedIcon.value.isNotEmpty()) {
                     vm.onIconChange(selectedIcon.value)
                     backStackEntry.savedStateHandle.remove<String>(KEY_SELECTED_ICON)
                 }
             }
-
             GroupFormScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToIconPicker = { currentKey ->
@@ -153,20 +142,17 @@ fun AppNavGraph() {
 
         composable(
             route = ROUTE_GROUP_FORM_EDIT,
-            arguments = listOf(navArgument(KEY_GROUP_ID) { type = NavType.LongType }),
+            arguments = listOf(navArgument(KEY_GROUP_ID) { type = NavType.StringType }),
         ) { backStackEntry ->
             val vm: GroupFormViewModel = hiltViewModel(backStackEntry)
-
             val selectedIcon = backStackEntry.savedStateHandle
-                .getStateFlow(KEY_SELECTED_ICON, "")
-                .collectAsState()
+                .getStateFlow(KEY_SELECTED_ICON, "").collectAsState()
             LaunchedEffect(selectedIcon.value) {
                 if (selectedIcon.value.isNotEmpty()) {
                     vm.onIconChange(selectedIcon.value)
                     backStackEntry.savedStateHandle.remove<String>(KEY_SELECTED_ICON)
                 }
             }
-
             GroupFormScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToIconPicker = { currentKey ->
@@ -180,7 +166,6 @@ fun AppNavGraph() {
         composable(ROUTE_ICON_PICKER) {
             val formEntry = navController.previousBackStackEntry
             val currentIcon = formEntry?.savedStateHandle?.get<String>(KEY_CURRENT_ICON) ?: "place"
-
             IconPickerScreen(
                 currentIconKey = currentIcon,
                 onIconSelected = { key ->
@@ -193,9 +178,9 @@ fun AppNavGraph() {
 
         composable(
             route = ROUTE_ROUTE_FINALIZE,
-            arguments = listOf(navArgument(KEY_ROUTE_ID) { type = NavType.LongType }),
+            arguments = listOf(navArgument(KEY_ROUTE_ID) { type = NavType.StringType }),
         ) { backStackEntry ->
-            val routeId = backStackEntry.arguments?.getLong(KEY_ROUTE_ID) ?: return@composable
+            val routeId = backStackEntry.arguments?.getString(KEY_ROUTE_ID) ?: return@composable
             RouteFinalizeScreen(
                 routeId = routeId,
                 onDone = { navController.popBackStack() },

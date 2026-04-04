@@ -17,7 +17,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.mappingsolution.data.db.entity.GroupEntity
+import com.mappingsolution.data.model.Group
 import com.mappingsolution.ui.common.IconCatalog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -25,14 +25,14 @@ import com.mappingsolution.ui.common.IconCatalog
 fun LibraryScreen(
     onNavigateBack: () -> Unit,
     onCreateGroup: () -> Unit,
-    onEditGroup: (Long) -> Unit,
+    onEditGroup: (String) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val groups by viewModel.groups.collectAsState()
     val orphanedPois by viewModel.orphanedPois.collectAsState()
     val allRoutes by viewModel.allRoutes.collectAsState()
-    var deleteTarget by remember { mutableStateOf<GroupEntity?>(null) }
-    var deleteWithItems by remember { mutableStateOf<Pair<GroupEntity, DeleteGroupResult.HasItems>?>(null) }
+    var deleteTarget by remember { mutableStateOf<Group?>(null) }
+    var deleteWithItems by remember { mutableStateOf<Pair<Group, DeleteGroupResult.HasItems>?>(null) }
 
     // Simple delete confirmation (no items)
     deleteTarget?.let { group ->
@@ -193,7 +193,7 @@ fun LibraryScreen(
 
 @Composable
 private fun GroupRow(
-    group: GroupEntity,
+    group: Group,
     onToggleVisibility: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,

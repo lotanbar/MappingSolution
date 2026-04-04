@@ -6,7 +6,7 @@ sealed class RecordingState {
     object Idle : RecordingState()
 
     data class Active(
-        val routeId: Long,
+        val routeId: String,
         val autoName: String,
         val startedAtMs: Long,
         val totalPausedMs: Long = 0L,

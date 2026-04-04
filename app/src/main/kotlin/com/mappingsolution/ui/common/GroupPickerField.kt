@@ -19,8 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
-import androidx.compose.ui.Modifier as M
-import com.mappingsolution.data.db.entity.GroupEntity
+import com.mappingsolution.data.model.Group
 
 /**
  * Shared group picker dropdown used in POI and route forms.
@@ -33,9 +32,9 @@ import com.mappingsolution.data.db.entity.GroupEntity
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupPickerField(
-    groups: List<GroupEntity>,
-    selectedGroupId: Long?,
-    onGroupSelected: (Long?) -> Unit,
+    groups: List<Group>,
+    selectedGroupId: String?,
+    onGroupSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
     showCreateGroup: Boolean = false,
     onCreateGroup: () -> Unit = {},
@@ -111,7 +110,7 @@ fun GroupPickerField(
     }
 }
 
-private fun GroupEntity.parsedColor(): Color = try {
+private fun Group.parsedColor(): Color = try {
     Color(android.graphics.Color.parseColor(color))
 } catch (_: Exception) {
     Color(0xFF2196F3.toInt())

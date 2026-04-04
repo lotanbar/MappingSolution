@@ -73,7 +73,7 @@ import java.io.File
 @Composable
 fun PoiFormScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToMediaPreview: (poiId: Long, index: Int, paths: List<String>) -> Unit = { _, _, _ -> },
+    onNavigateToMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit = { _, _, _ -> },
     onCreateGroup: () -> Unit = {},
     viewModel: PoiFormViewModel = hiltViewModel(),
 ) {
@@ -247,7 +247,7 @@ fun PoiFormScreen(
                         }
                         PoiMediaGallery(
                             mediaItems = mediaItems,
-                            onItemClick = { index -> onNavigateToMediaPreview(viewModel.poiId ?: 0L, index, state.mediaPaths) },
+                            onItemClick = { index -> onNavigateToMediaPreview(viewModel.poiId ?: "", index, state.mediaPaths) },
                             onRemoveItem = { index -> viewModel.removeMediaPath(state.mediaPaths[index]) },
                             modifier = Modifier.fillMaxWidth()
                         )

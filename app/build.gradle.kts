@@ -65,11 +65,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
     // Media3
     implementation("androidx.media3:media3-exoplayer:1.5.0")
     implementation("androidx.media3:media3-ui:1.5.0")

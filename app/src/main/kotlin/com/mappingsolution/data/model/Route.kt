@@ -1,18 +1,13 @@
-package com.mappingsolution.data.db.entity
+package com.mappingsolution.data.model
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import java.util.UUID
 
-@Entity(
-    tableName = "routes",
-)
-data class RouteEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+data class Route(
+    val id: String = UUID.randomUUID().toString(),
     val color: String = "#FFFF5722",
     val name: String,
     val description: String? = null,
     val isVisible: Boolean = true,
-    /** false until the user explicitly taps Stop; used to detect incomplete recordings on relaunch */
     val didUserTapStop: Boolean = false,
     val startedAt: Long,
     val stoppedAt: Long? = null,
@@ -20,5 +15,5 @@ data class RouteEntity(
     val distanceMeters: Double = 0.0,
     val durationSec: Long = 0L,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
 )

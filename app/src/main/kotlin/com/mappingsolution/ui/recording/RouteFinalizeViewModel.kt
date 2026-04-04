@@ -2,7 +2,7 @@ package com.mappingsolution.ui.recording
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mappingsolution.data.repository.RouteRepository
+import com.mappingsolution.data.fs.RouteFileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RouteFinalizeState(
-    val routeId: Long = 0,
+    val routeId: String = "",
     val name: String = "",
     val description: String = "",
     val color: String = "#FFFF5722",
@@ -21,13 +21,13 @@ data class RouteFinalizeState(
 
 @HiltViewModel
 class RouteFinalizeViewModel @Inject constructor(
-    private val routeRepository: RouteRepository,
+    private val routeRepository: RouteFileRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(RouteFinalizeState())
     val state: StateFlow<RouteFinalizeState> = _state.asStateFlow()
 
-    fun load(routeId: Long) {
+    fun load(routeId: String) {
         viewModelScope.launch {
             val route = routeRepository.getById(routeId) ?: return@launch
             _state.value = RouteFinalizeState(
@@ -46,7 +46,7 @@ class RouteFinalizeViewModel @Inject constructor(
 
     fun save(onDone: () -> Unit) {
         val st = _state.value
-        if (st.routeId == 0L) return  // load() hasn't completed yet; shouldn't happen normally
+        if (st.routeId.isEmpty()) return
         viewModelScope.launch {
             _state.value = st.copy(isSaving = true)
             routeRepository.updateFields(
