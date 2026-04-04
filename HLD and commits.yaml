@@ -22,7 +22,7 @@ Mapping App:
             - add media
         - Record a route:
           - First check battery optimization is disabled for this app. Prompt the user if an action is needed.
-          - A name is generated automatically: HH:MM DDDD:MM:YYYY. It will be used as the route's name when autosaving it
+          - A name is generated automatically: DD/MM/YYYY-HH:MM-duration-distance (e.g. 04/04/2026-14:30-12:34-1.20km). It will be used as the route's name when autosaving it
             to handle an incomplete scenario (see full data model below)
           - A route is incomplete when the user did not tap the stop button to stop the recording, but the recording was forcefully stopped.
           - The prime example is the app being forcefully killed for some reason. For example, the device ran out of battery.
@@ -37,8 +37,9 @@ Mapping App:
             - Tapping stop opens a screen where the user needs to pick:
               - name - prefilled with generated name, can be changed by the user
               - description - optional
-              - group (defines color only, since routes can't show an icon)
+              - color - a color palette picker (routes do NOT belong to groups; they display in their chosen color on the map)
               - no media here
+            - If the user tries to navigate back from this screen and the recording distance is >= 100m, a confirmation dialog with a 5-second cooldown appears warning that going back will discard the recording.
             - The recording will keep working in the background until the process is killed (which will make the recording incomplete) or stopped by the user
             - Being stale for long time periods does not affect the recording.
         - Library:
@@ -56,7 +57,8 @@ Mapping App:
             - The data is imported into a group with the imported top folder's name.
             - Visibility is on by default.
             - The user can interact with the row as he would with regular content.
-          - Shows collapses for groups with one row per member inside them, and rows below all collapses per orphan.
+          - Shows collapses for groups with one row per POI member inside them, and rows below all collapses per orphaned POI.
+          - Routes are independent of groups; they appear in a flat "Routes" section below groups, each showing a colored circle matching the route's chosen color.
           - Tapping a row - group/route/POI opens the edit screen - fields to edit change between fields.
           - To the right of each row there is an eye icon; tapping it toggles visibility on the map.
           - We can toggle visibility of routes/POIs and even entire groups if we want.
@@ -103,7 +105,7 @@ data models:
 
   Route:
     - id
-    - groupId (optional)
+    - color (hex string, e.g. "#FFFF5722"; routes do NOT belong to groups)
     - name
     - description (optional)
     - isVisible
@@ -229,6 +231,25 @@ implementation_commit_order:
       - second recording attempt while one is active: blocked with message
 
   - commit_7:
+    title: Smart GPS track processing (map matching + Kalman smoothing)
+    scope:
+      - GpsKalmanFilter: 2D Kalman filter; smooths raw GPS using Location.accuracy as dynamic measurement noise
+      - OsrmMapMatchingClient: OkHttp client against router.project-osrm.org/match/v1/driving; returns snapped geometry + confidence
+      - MapMatchingBuffer: accumulates N=8 smoothed points (or 15s timeout) before calling OSRM; keeps 2 anchor points between batches
+      - TrackModeManager: hysteresis-based ROAD/OFF_ROAD mode switching (enter ROAD after 2 confident batches; exit after 3 low-confidence batches)
+      - SmartTrackProcessor: orchestrates the pipeline; wires into RecordingService replacing direct GPS-to-state logic
+      - Add OkHttp dependency
+    manual_test:
+      - walk along a road: recorded polyline snaps to road geometry, no wandering
+      - walk off-road (trail, field): line is smooth but not snapped; transitions back to road mode when returning to pavement
+      - stand still on a road: no jitter points added (existing MIN_MOVEMENT_METERS guard still applies)
+    edge_and_error_tests:
+      - OSRM unreachable (no internet): falls back to Kalman-smoothed points silently; recording continues uninterrupted
+      - GPS accuracy worse than MAX_ACCURACY_METERS: point rejected before entering pipeline (existing guard)
+      - very dense road network (city center): correct road selected, no snapping to parallel road
+      - tunnel/GPS loss mid-recording: buffer times out and emits Kalman points; resumes matching when GPS returns
+
+  - commit_8:
     title: Background recording + incomplete recovery
     scope:
       - background location strategy
@@ -243,7 +264,7 @@ implementation_commit_order:
       - location permission revoked while recording
       - recovery prompt cancel path (route remains incomplete and visible)
 
-  - commit_8:
+  - commit_9:
     title: Library full management UX
     scope:
       - search groups/POIs/routes
@@ -261,7 +282,7 @@ implementation_commit_order:
       - mixed selection invalid states are prevented
       - parent/child visibility toggle behavior is deterministic
 
-  - commit_9:
+  - commit_10:
     title: Import pipeline (GPX/KML/GeoJSON)
     scope:
       - folder picker import
@@ -278,7 +299,7 @@ implementation_commit_order:
       - partial import succeeds (good files imported, bad files logged)
       - imported-group dedup collisions are handled per strict dedup rule
 
-  - commit_10:
+  - commit_11:
     title: Hardening + regression pass + final commit
     scope:
       - stability fixes

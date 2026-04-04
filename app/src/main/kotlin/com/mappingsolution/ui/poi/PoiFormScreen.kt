@@ -64,6 +64,8 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.MediaItem
 import com.mappingsolution.data.model.MediaType
+import com.mappingsolution.ui.common.FormSaveButton
+import com.mappingsolution.ui.common.GroupPickerField
 import com.mappingsolution.ui.poi.media.PoiMediaGallery
 import java.io.File
 
@@ -78,7 +80,6 @@ fun PoiFormScreen(
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val groups by viewModel.groups.collectAsState()
-    var showGroupDropdown by remember { mutableStateOf(false) }
 
     // File picker
     val mediaLauncher = rememberLauncherForActivityResult(
@@ -180,78 +181,14 @@ fun PoiFormScreen(
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
-                    ExposedDropdownMenuBox(
-                        expanded = showGroupDropdown,
-                        onExpandedChange = { showGroupDropdown = it },
-                    ) {
-                        val selectedGroup = groups.find { it.id == state.groupId }
-                        OutlinedTextField(
-                            value = selectedGroup?.name ?: "No group",
-                            onValueChange = {},
-                            readOnly = true,
-                            leadingIcon = selectedGroup?.let { group ->
-                                {
-                                    val iconColor = try {
-                                        Color(android.graphics.Color.parseColor(group.color))
-                                    } catch (_: Exception) {
-                                        MaterialTheme.colorScheme.primary
-                                    }
-                                    Icon(
-                                        imageVector = IconCatalog.iconVector(group.iconKey),
-                                        contentDescription = null,
-                                        tint = iconColor,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                            },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(showGroupDropdown) },
-                            modifier = Modifier
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                .fillMaxWidth(),
-                        )
-                        ExposedDropdownMenu(
-                            expanded = showGroupDropdown,
-                            onDismissRequest = { showGroupDropdown = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("No group") },
-                                onClick = {
-                                    viewModel.onGroupChange(null)
-                                    showGroupDropdown = false
-                                },
-                            )
-                            groups.forEach { group ->
-                                val iconColor = try {
-                                    Color(android.graphics.Color.parseColor(group.color))
-                                } catch (_: Exception) {
-                                    MaterialTheme.colorScheme.primary
-                                }
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = IconCatalog.iconVector(group.iconKey),
-                                            contentDescription = null,
-                                            tint = iconColor,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    },
-                                    text = { Text(group.name) },
-                                    onClick = {
-                                        viewModel.onGroupChange(group.id)
-                                        showGroupDropdown = false
-                                    },
-                                )
-                            }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("+ New Group") },
-                                onClick = {
-                                    showGroupDropdown = false
-                                    onCreateGroup()
-                                },
-                            )
-                        }
-                    }
+                    GroupPickerField(
+                        groups = groups,
+                        selectedGroupId = state.groupId,
+                        onGroupSelected = viewModel::onGroupChange,
+                        showCreateGroup = true,
+                        onCreateGroup = onCreateGroup,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
 
                 Text(
@@ -326,30 +263,12 @@ fun PoiFormScreen(
                 }
             }
 
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
-            ) {
-                Button(
+            FormSaveButton(
                     onClick = { viewModel.save { onNavigateBack() } },
-                    enabled = !state.isSaving,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .height(52.dp),
-                ) {
-                    if (state.isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    } else {
-                        Text(if (viewModel.isEditing) "Save" else "Create")
-                    }
-                }
-            }
+                    label = if (viewModel.isEditing) "Save" else "Create",
+                    isSaving = state.isSaving,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
         }
     }
 }

@@ -1,25 +1,14 @@
 package com.mappingsolution.data.db.entity
 
 import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "routes",
-    foreignKeys = [
-        ForeignKey(
-            entity = GroupEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["groupId"],
-            onDelete = ForeignKey.SET_NULL
-        )
-    ],
-    indices = [Index("groupId")]
 )
 data class RouteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val groupId: Long? = null,
+    val color: String = "#FFFF5722",
     val name: String,
     val description: String? = null,
     val isVisible: Boolean = true,

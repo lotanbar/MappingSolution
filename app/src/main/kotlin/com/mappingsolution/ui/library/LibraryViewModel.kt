@@ -15,7 +15,7 @@ import javax.inject.Inject
 
 sealed class DeleteGroupResult {
     object Done : DeleteGroupResult()
-    data class HasItems(val poiCount: Int, val routeCount: Int) : DeleteGroupResult()
+    data class HasItems(val poiCount: Int) : DeleteGroupResult()
 }
 
 @HiltViewModel
@@ -31,7 +31,7 @@ class LibraryViewModel @Inject constructor(
     val orphanedPois = poiRepository.observeOrphans()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val orphanedRoutes = routeRepository.observeOrphans()
+    val allRoutes = routeRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun toggleVisibility(group: GroupEntity) {
@@ -45,9 +45,8 @@ class LibraryViewModel @Inject constructor(
     fun requestDelete(group: GroupEntity, onResult: (DeleteGroupResult) -> Unit) {
         viewModelScope.launch {
             val poiCount = poiRepository.countByGroup(group.id)
-            val routeCount = routeRepository.countByGroup(group.id)
-            if (poiCount + routeCount > 0) {
-                onResult(DeleteGroupResult.HasItems(poiCount, routeCount))
+            if (poiCount > 0) {
+                onResult(DeleteGroupResult.HasItems(poiCount))
             } else {
                 groupRepository.delete(group)
                 onResult(DeleteGroupResult.Done)

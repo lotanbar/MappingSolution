@@ -30,18 +30,23 @@ import com.mappingsolution.BuildConfig
 import com.mappingsolution.createPinBitmap
 import com.mappingsolution.data.db.entity.GroupEntity
 import com.mappingsolution.data.db.entity.PoiEntity
+import com.mappingsolution.data.recording.RecordingPoint
 import com.mappingsolution.ui.common.IconCatalog
 import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 private fun styleUrl() =
@@ -87,6 +92,8 @@ private fun createPoiPin(
 fun MapComponent(
     pois: List<PoiEntity> = emptyList(),
     groups: List<GroupEntity> = emptyList(),
+    liveRoutePoints: List<RecordingPoint> = emptyList(),
+    flyToLocation: Pair<Double, Double>? = null,
     onPoiTapped: (Long) -> Unit = {},
     onMapError: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -164,6 +171,27 @@ fun MapComponent(
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
+    // Fly to requested location
+    LaunchedEffect(flyToLocation) {
+        val (lat, lng) = flyToLocation ?: return@LaunchedEffect
+        val map = mapState.value ?: return@LaunchedEffect
+        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 17.0))
+    }
+
+    // Re-render live route polyline whenever points change
+    LaunchedEffect(liveRoutePoints, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val lineSource = style.getSource("live-route-source") as? GeoJsonSource ?: return@LaunchedEffect
+        if (liveRoutePoints.size >= 2) {
+            val pts = liveRoutePoints.map { Point.fromLngLat(it.lng, it.lat) }
+            lineSource.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(pts)))
+        } else {
+            lineSource.setGeoJson(FeatureCollection.fromFeatures(emptyList<Feature>()))
+        }
+    }
+
     AndroidView(
         factory = {
             mapView.addOnDidFailLoadingMapListener {
@@ -174,6 +202,15 @@ fun MapComponent(
                 map.setStyle(Style.Builder().fromUri(styleUrl())) { style ->
                     style.addSource(
                         GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>()))
+                    )
+                    style.addSource(GeoJsonSource("live-route-source"))
+                    style.addLayer(
+                        LineLayer("live-route-line", "live-route-source").withProperties(
+                            PropertyFactory.lineColor("#FF5722"),
+                            PropertyFactory.lineWidth(4f),
+                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                        )
                     )
                     style.addLayer(
                         SymbolLayer("poi-symbols", "poi-source").withProperties(

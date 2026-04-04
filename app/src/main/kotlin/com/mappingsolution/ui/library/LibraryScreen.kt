@@ -1,8 +1,10 @@
 package com.mappingsolution.ui.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -10,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -27,7 +30,7 @@ fun LibraryScreen(
 ) {
     val groups by viewModel.groups.collectAsState()
     val orphanedPois by viewModel.orphanedPois.collectAsState()
-    val orphanedRoutes by viewModel.orphanedRoutes.collectAsState()
+    val allRoutes by viewModel.allRoutes.collectAsState()
     var deleteTarget by remember { mutableStateOf<GroupEntity?>(null) }
     var deleteWithItems by remember { mutableStateOf<Pair<GroupEntity, DeleteGroupResult.HasItems>?>(null) }
 
@@ -49,8 +52,7 @@ fun LibraryScreen(
                     }
                     deleteTarget = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
+            },            dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
             },
         )
@@ -62,11 +64,7 @@ fun LibraryScreen(
             onDismissRequest = { deleteWithItems = null },
             title = { Text("Delete group") },
             text = {
-                val items = buildList {
-                    if (info.poiCount > 0) add("${info.poiCount} POI(s)")
-                    if (info.routeCount > 0) add("${info.routeCount} route(s)")
-                }.joinToString(" and ")
-                Text("\"${group.name}\" has $items. Delete the group and orphan its items?")
+                Text("\"${group.name}\" has ${info.poiCount} POI(s). Delete the group and orphan its items?")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -97,41 +95,13 @@ fun LibraryScreen(
             )
         }
     ) { padding ->
-        if (groups.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "No groups yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Tap + to create your first group",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = padding.calculateBottomPadding() + 16.dp,
-                ),
-            ) {
+        LazyColumn(
+            contentPadding = PaddingValues(
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 16.dp,
+            ),
+        ) {
+            if (groups.isNotEmpty()) {
                 items(groups, key = { it.id }) { group ->
                     GroupRow(
                         group = group,
@@ -141,27 +111,79 @@ fun LibraryScreen(
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
-                if (orphanedPois.isNotEmpty() || orphanedRoutes.isNotEmpty()) {
-                    item {
-                        Text(
-                            "Unassigned Items",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+            }
+            if (orphanedPois.isNotEmpty()) {
+                item {
+                    Text(
+                        "Unassigned POIs",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                items(orphanedPois, key = { "poi-${it.id}" }) { poi ->
+                    ListItem(
+                        headlineContent = { Text(poi.name) },
+                        leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null) },
+                    )
+                }
+            }
+            if (allRoutes.isNotEmpty()) {
+                item {
+                    Text(
+                        "Routes",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                items(allRoutes, key = { "route-${it.id}" }) { route ->
+                    val routeColor = try {
+                        Color(android.graphics.Color.parseColor(route.color))
+                    } catch (_: Exception) {
+                        Color(0xFFFF5722.toInt())
                     }
-                    items(orphanedPois, key = { "poi-${it.id}" }) { poi ->
-                        // Using a simple Row for display, similar structure to GroupRow would be better but keeping it simple for now
-                        ListItem(
-                            headlineContent = { Text(poi.name) },
-                            leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null) },
-                        )
-                    }
-                    items(orphanedRoutes, key = { "route-${it.id}" }) { route ->
-                        ListItem(
-                            headlineContent = { Text(route.name) },
-                            leadingContent = { Icon(Icons.Default.Route, contentDescription = null) },
-                        )
+                    ListItem(
+                        headlineContent = { Text(route.name) },
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(routeColor),
+                            )
+                        },
+                    )
+                }
+            }
+            if (groups.isEmpty() && orphanedPois.isEmpty() && allRoutes.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillParentMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "Nothing here yet",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Record a route or tap + to create a group",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            )
+                        }
                     }
                 }
             }

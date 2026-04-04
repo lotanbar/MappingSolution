@@ -2,7 +2,6 @@ package com.mappingsolution.ui.library
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -10,13 +9,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.ui.common.ColorSelectorField
 import com.mappingsolution.ui.common.IconCatalog
-import com.mappingsolution.ui.library.components.ColorPickerDialog
-import com.mappingsolution.ui.library.components.parseHex
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,18 +22,6 @@ fun GroupFormScreen(
     viewModel: GroupFormViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    var showColorPicker by remember { mutableStateOf(false) }
-
-    if (showColorPicker) {
-        ColorPickerDialog(
-            initialHex = state.color,
-            onConfirm = { hex ->
-                viewModel.onColorChange(hex)
-                showColorPicker = false
-            },
-            onDismiss = { showColorPicker = false },
-        )
-    }
 
     Scaffold(
         topBar = {
@@ -139,22 +123,10 @@ fun GroupFormScreen(
                                 else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 6.dp),
                     )
-                    val currentColor = parseHex(state.color)
-                    OutlinedButton(
-                        onClick = { showColorPicker = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .drawBehind { drawCircle(currentColor) },
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(state.color)
-                        Spacer(Modifier.weight(1f))
-                        Text("Change", style = MaterialTheme.typography.labelMedium)
-                    }
+                    ColorSelectorField(
+                        color = state.color,
+                        onColorChange = viewModel::onColorChange,
+                    )
                     if (state.colorError != null) {
                         Text(
                             text = state.colorError!!,

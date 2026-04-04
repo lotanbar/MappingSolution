@@ -18,6 +18,7 @@ import com.mappingsolution.ui.main.MainScreen
 import com.mappingsolution.ui.poi.PoiDetailScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
 import com.mappingsolution.ui.poi.media.MediaPreviewScreen
+import com.mappingsolution.ui.recording.RouteFinalizeScreen
 
 private const val ROUTE_MAIN = "main"
 private const val ROUTE_LIBRARY = "library"
@@ -28,9 +29,11 @@ private const val ROUTE_POI_FORM_NEW = "poi_form_new?lat={lat}&lng={lng}"
 private const val ROUTE_POI_DETAIL = "poi_detail/{poiId}"
 private const val ROUTE_POI_MEDIA_PREVIEW = "poi_media_preview/{poiId}?startIndex={startIndex}"
 private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
+private const val ROUTE_ROUTE_FINALIZE = "route_finalize/{routeId}"
 
 private const val KEY_GROUP_ID = "groupId"
 private const val KEY_POI_ID = "poiId"
+private const val KEY_ROUTE_ID = "routeId"
 private const val KEY_START_INDEX = "startIndex"
 private const val KEY_LAT = "lat"
 private const val KEY_LNG = "lng"
@@ -51,6 +54,9 @@ fun AppNavGraph() {
                 },
                 onPoiTapped = { poiId ->
                     navController.navigate("poi_detail/$poiId")
+                },
+                onNavigateToFinalize = { routeId ->
+                    navController.navigate("route_finalize/$routeId")
                 },
             )
         }
@@ -182,6 +188,17 @@ fun AppNavGraph() {
                     navController.popBackStack()
                 },
                 onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = ROUTE_ROUTE_FINALIZE,
+            arguments = listOf(navArgument(KEY_ROUTE_ID) { type = NavType.LongType }),
+        ) { backStackEntry ->
+            val routeId = backStackEntry.arguments?.getLong(KEY_ROUTE_ID) ?: return@composable
+            RouteFinalizeScreen(
+                routeId = routeId,
+                onDone = { navController.popBackStack() },
             )
         }
     }

@@ -3,10 +3,14 @@ package com.mappingsolution.ui.main
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Looper
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -28,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,8 +45,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.recording.RecordingEvent
+import com.mappingsolution.data.recording.RecordingState
 import com.mappingsolution.ui.main.components.BottomActionPanel
 import com.mappingsolution.ui.main.components.MapComponent
+import com.mappingsolution.ui.recording.RecordingViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -52,16 +60,45 @@ fun MainScreen(
     onOpenLibrary: () -> Unit,
     onAddPoi: (lat: Double, lng: Double) -> Unit,
     onPoiTapped: (poiId: Long) -> Unit,
+    onNavigateToFinalize: (routeId: Long) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel(),
+    recordingViewModel: RecordingViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pois by viewModel.pois.collectAsState()
     val groups by viewModel.groups.collectAsState()
+    val recordingState by recordingViewModel.state.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
     var mapError by remember { mutableStateOf<String?>(null) }
+    var showBatteryDialog by remember { mutableStateOf(false) }
+    var flyToTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    // Collect recording stopped events and navigate to finalize screen
+    LaunchedEffect(Unit) {
+        recordingViewModel.events.collect { event ->
+            if (event is RecordingEvent.Stopped) {
+                recordingViewModel.consumeStoppedEvent()
+                onNavigateToFinalize(event.routeId)
+            }
+        }
+    }
+
+    val batterySettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        recordingViewModel.startRecording()
+    }
+
+    fun checkBatteryAndStart() {
+        if (recordingViewModel.needsBatteryOptimizationExemption()) {
+            showBatteryDialog = true
+        } else {
+            recordingViewModel.startRecording()
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -80,6 +117,38 @@ fun MainScreen(
         } else {
             locationError = "Location permission is required to add a POI at your current position."
         }
+    }
+
+    // Separate permission launcher for recording
+    val recordingPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) checkBatteryAndStart()
+        else locationError = "Location permission is required for route recording."
+    }
+
+    if (showBatteryDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatteryDialog = false },
+            title = { Text("Battery Optimization") },
+            text = { Text("For reliable background recording, please disable battery optimization for this app. Without this, the OS may stop recording when the screen is off.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBatteryDialog = false
+                    batterySettingsLauncher.launch(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    )
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showBatteryDialog = false
+                    recordingViewModel.startRecording()
+                }) { Text("Continue Anyway") }
+            },
+        )
     }
 
     if (locationError != null) {
@@ -104,6 +173,8 @@ fun MainScreen(
                     groups = groups,
                     onPoiTapped = onPoiTapped,
                     onMapError = { mapError = it },
+                    liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
+                    flyToLocation = flyToTarget,
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (mapError != null) {
@@ -127,10 +198,17 @@ fun MainScreen(
                 }
             }
             BottomActionPanel(
+                onFlyToLocation = {
+                    scope.launch {
+                        val loc = withTimeoutOrNull(10_000L) { fetchCurrentLocation(context) }
+                        if (loc != null) flyToTarget = loc
+                        else locationError = "Could not determine location."
+                    }
+                },
                 onAddPoi = {
                     val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) == PackageManager.PERMISSION_GRANTED
                     if (hasPerm) {
                         scope.launch {
                             isFetchingLocation = true
@@ -146,7 +224,17 @@ fun MainScreen(
                         permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 },
-                onRecordRoute = { /* commit 4 */ },
+                onRecordRoute = {
+                    val hasPerm = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasPerm) checkBatteryAndStart()
+                    else recordingPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                },
+                recordingState = recordingState,
+                onPauseRecording = { recordingViewModel.pauseRecording() },
+                onResumeRecording = { recordingViewModel.resumeRecording() },
+                onStopRecording = { recordingViewModel.stopRecording() },
                 onOpenLibrary = onOpenLibrary,
                 modifier = Modifier
                     .fillMaxWidth()
