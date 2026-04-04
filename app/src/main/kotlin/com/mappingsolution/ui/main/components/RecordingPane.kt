@@ -1,7 +1,6 @@
 package com.mappingsolution.ui.main.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -22,11 +22,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.mappingsolution.data.recording.RecordingState
 import kotlinx.coroutines.delay
 
+/** Collapsible pane content shown below the main action row during an active recording. */
 @Composable
 fun RecordingPane(
     state: RecordingState.Active,
@@ -43,58 +45,57 @@ fun RecordingPane(
         }
     }
 
+    HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
-            Text(
-                text = formatElapsed(state.elapsedMs(nowMs)),
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-            )
-            Text(
-                text = formatDistance(state.distanceMeters),
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.8f),
-            )
-        }
-        Row {
-            if (state.isPaused) {
-                IconButton(onClick = onResume) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Resume recording",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
-            } else {
-                IconButton(onClick = onPause) {
-                    Icon(
-                        imageVector = Icons.Default.Pause,
-                        contentDescription = "Pause recording",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
-            }
-            IconButton(onClick = onStop) {
+        Text(
+            text = formatElapsed(state.elapsedMs(nowMs)),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+        Text(
+            text = formatDistance(state.distanceMeters),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+        if (state.isPaused) {
+            IconButton(onClick = onResume, modifier = Modifier.size(56.dp)) {
                 Icon(
-                    imageVector = Icons.Default.Stop,
-                    contentDescription = "Stop recording",
-                    tint = Color.Red,
-                    modifier = Modifier.size(28.dp),
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Resume recording",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp),
                 )
             }
+        } else {
+            IconButton(onClick = onPause, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = "Pause recording",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+        }
+        IconButton(onClick = onStop, modifier = Modifier.size(56.dp)) {
+            Icon(
+                imageVector = Icons.Default.Stop,
+                contentDescription = "Stop recording",
+                tint = Color.Red,
+                modifier = Modifier.size(32.dp),
+            )
         }
     }
 }
 
-private fun formatElapsed(ms: Long): String {
+internal fun formatElapsed(ms: Long): String {
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
@@ -102,5 +103,5 @@ private fun formatElapsed(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
 
-private fun formatDistance(meters: Double): String =
+internal fun formatDistance(meters: Double): String =
     if (meters >= 1000) "%.2f km".format(meters / 1000) else "%.0f m".format(meters)

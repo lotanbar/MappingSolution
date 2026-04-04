@@ -1,13 +1,34 @@
 package com.mappingsolution.ui.main.components
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material3.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,57 +47,97 @@ fun BottomActionPanel(
     onStopRecording: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onFlyToLocation, modifier = Modifier.size(56.dp)) {
-            Icon(
-                imageVector = Icons.Default.GpsFixed,
-                contentDescription = "Fly to current location",
-                modifier = Modifier.size(32.dp),
-                tint = Color.White,
-            )
-        }
+    val isRecording = recordingState is RecordingState.Active
+    var paneExpanded by remember { mutableStateOf(false) }
 
-        IconButton(onClick = onAddPoi, modifier = Modifier.size(56.dp)) {
-            Icon(
-                imageVector = Icons.Default.AddLocation,
-                contentDescription = "Add POI at current location",
-                modifier = Modifier.size(32.dp),
-                tint = Color.White,
-            )
-        }
+    // Keep the last Active state so the exit animation can still render the pane
+    // even after recordingState has already flipped back to Idle.
+    var lastActiveState by remember { mutableStateOf<RecordingState.Active?>(null) }
+    if (recordingState is RecordingState.Active) lastActiveState = recordingState
 
-        if (recordingState is RecordingState.Active) {
-            RecordingPane(
-                state = recordingState,
-                onPause = onPauseRecording,
-                onResume = onResumeRecording,
-                onStop = onStopRecording,
-                modifier = Modifier.weight(1f),
-            )
-        } else {
-            IconButton(onClick = onRecordRoute, modifier = Modifier.size(56.dp)) {
+    // Collapse the pane automatically when recording ends; expand automatically when it starts
+    LaunchedEffect(isRecording) {
+        paneExpanded = isRecording
+    }
+
+    // Flashing animation for the record button while recording is active
+    val infiniteTransition = rememberInfiniteTransition(label = "recording-flash")
+    val flashAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "flash-alpha",
+    )
+    val recordIconTint = if (isRecording) Color.Red.copy(alpha = flashAlpha) else Color.White
+
+    Column(modifier = modifier.fillMaxWidth().navigationBarsPadding()) {
+        // Main 4-button row — always visible
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onFlyToLocation, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.GpsFixed,
+                    contentDescription = "Fly to current location",
+                    modifier = Modifier.size(32.dp),
+                    tint = Color.White,
+                )
+            }
+
+            IconButton(onClick = onAddPoi, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.AddLocation,
+                    contentDescription = "Add POI at current location",
+                    modifier = Modifier.size(32.dp),
+                    tint = Color.White,
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    if (isRecording) paneExpanded = !paneExpanded else onRecordRoute()
+                },
+                modifier = Modifier.size(56.dp),
+            ) {
                 Icon(
                     imageVector = Icons.Default.RadioButtonChecked,
-                    contentDescription = "Record a route",
+                    contentDescription = if (isRecording) "Recording in progress — tap to show details" else "Record a route",
+                    modifier = Modifier.size(32.dp),
+                    tint = recordIconTint,
+                )
+            }
+
+            IconButton(onClick = onOpenLibrary, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = "Open library",
                     modifier = Modifier.size(32.dp),
                     tint = Color.White,
                 )
             }
         }
 
-        IconButton(onClick = onOpenLibrary, modifier = Modifier.size(56.dp)) {
-            Icon(
-                imageVector = Icons.Default.Folder,
-                contentDescription = "Open library",
-                modifier = Modifier.size(32.dp),
-                tint = Color.White,
-            )
+        // Collapsible recording details pane
+        AnimatedVisibility(
+            visible = isRecording && paneExpanded,
+            enter = expandVertically(expandFrom = Alignment.Top),
+            exit = shrinkVertically(shrinkTowards = Alignment.Top),
+        ) {
+            lastActiveState?.let { active ->
+                RecordingPane(
+                    state = active,
+                    onPause = onPauseRecording,
+                    onResume = onResumeRecording,
+                    onStop = onStopRecording,
+                )
+            }
         }
     }
 }

@@ -131,7 +131,14 @@ class RecordingService : Service() {
     private suspend fun handleStop() {
         stopLocationUpdates()
         val current = recordingRepository.state.value as? RecordingState.Active ?: run { stopSelf(); return }
-        flushPendingPoints(current.routeId)
+        // Flush remaining points synchronously — finalizeStop renames the folder,
+        // so we must finish writing before that rename happens.
+        if (pendingPoints.isNotEmpty()) {
+            val toFlush = pendingPoints.toList()
+            pendingPoints.clear()
+            recordingRepository.persistPointsSync(current.routeId, toFlush)
+            flushedPointCount += toFlush.size
+        }
         val now = System.currentTimeMillis()
         val durationSec = current.elapsedMs(now) / 1000L
         recordingRepository.finalizeStop(current.routeId, current.distanceMeters, durationSec)

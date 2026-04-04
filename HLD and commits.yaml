@@ -230,26 +230,71 @@ implementation_commit_order:
       - GPS unavailable mid-recording: warning and continued session behavior
       - second recording attempt while one is active: blocked with message
 
-  - commit_7:
+  - commit_7:  # ✅ done 2026-04-04
     title: Smart GPS track processing (map matching + Kalman smoothing)
+    approach: >
+      Fully offline — no external APIs. Two complementary techniques are combined:
+      (1) A Kalman filter always runs on every raw GPS fix to remove high-frequency noise.
+          It is a mathematical algorithm (not an API) implemented entirely in Kotlin.
+          It uses Location.accuracy as dynamic input: a shakier fix is trusted less.
+      (2) MapLibre's queryRenderedFeatures is used to query road geometries that are
+          already loaded in device memory as part of the rendered map tiles. This requires
+          no additional network calls — the tiles are already present because the map
+          auto-follows the user's GPS during recording. The query returns the actual road
+          line geometries drawn on screen, which are then used for snapping.
+    pipeline: >
+      Raw GPS fix
+        → pre-filter (existing MAX_ACCURACY_METERS + MIN_MOVEMENT_METERS guards)
+        → GpsKalmanFilter → smoothed position
+        → query MapLibre for road features within SNAP_RADIUS_METERS (default 25m) of smoothed position
+        → if road found: project smoothed position onto nearest road segment → emit snapped point  [ROAD mode]
+        → if no road:    emit smoothed position directly                                           [OFF_ROAD mode]
+      Mode switching uses hysteresis counters to prevent flickering at road edges.
     scope:
-      - GpsKalmanFilter: 2D Kalman filter; smooths raw GPS using Location.accuracy as dynamic measurement noise
-      - OsrmMapMatchingClient: OkHttp client against router.project-osrm.org/match/v1/driving; returns snapped geometry + confidence
-      - MapMatchingBuffer: accumulates N=8 smoothed points (or 15s timeout) before calling OSRM; keeps 2 anchor points between batches
-      - TrackModeManager: hysteresis-based ROAD/OFF_ROAD mode switching (enter ROAD after 2 confident batches; exit after 3 low-confidence batches)
-      - SmartTrackProcessor: orchestrates the pipeline; wires into RecordingService replacing direct GPS-to-state logic
-      - Add OkHttp dependency
+      - GpsKalmanFilter: pure-Kotlin 2D Kalman filter; state = [lat, lng, dLat, dLng];
+          measurement noise R set dynamically from Location.accuracy; no external dependency
+      - RoadSnapper: queries MapLibre queryRenderedFeatures for road-layer features near the smoothed point;
+          target layer IDs from the MapTiler satellite-hybrid style (prefix-match "road"):
+          representative layers include "road_motorway", "road_trunk", "road_primary", "road_secondary",
+          "road_tertiary", "road_minor", "road_path" — query all layers whose ID starts with "road";
+          selects the geometrically closest road segment; projects the point onto that segment (closest-point-on-line math)
+      - TrackModeManager: hysteresis-based ROAD/OFF_ROAD mode switching;
+          enter ROAD after ROAD_ENTER_COUNT=2 consecutive snapped points;
+          exit to OFF_ROAD after ROAD_EXIT_COUNT=3 consecutive no-road results
+      - SmartTrackProcessor: orchestrates KalmanFilter → RoadSnapper → TrackModeManager;
+          exposes suspend fun process(location, mapLibreMap): RecordingPoint
+      - Wire SmartTrackProcessor into RecordingService replacing the direct GPS-to-state logic
+      - No new dependencies required (MapLibre already in project)
+    key_thresholds:
+      SNAP_RADIUS_METERS: 25       # how far to look for a road from the smoothed GPS position
+      ROAD_ENTER_COUNT: 2          # consecutive snapped results before switching to ROAD mode
+      ROAD_EXIT_COUNT: 3           # consecutive no-road results before switching to OFF_ROAD mode
     manual_test:
       - walk along a road: recorded polyline snaps to road geometry, no wandering
       - walk off-road (trail, field): line is smooth but not snapped; transitions back to road mode when returning to pavement
       - stand still on a road: no jitter points added (existing MIN_MOVEMENT_METERS guard still applies)
+      - record with no internet (tiles cached from prior session): snapping still works from cached tile data
     edge_and_error_tests:
-      - OSRM unreachable (no internet): falls back to Kalman-smoothed points silently; recording continues uninterrupted
+      - queryRenderedFeatures returns empty (map viewport lagged behind GPS, tile not yet loaded):
+          falls back to Kalman-smoothed point silently; recording continues uninterrupted
       - GPS accuracy worse than MAX_ACCURACY_METERS: point rejected before entering pipeline (existing guard)
-      - very dense road network (city center): correct road selected, no snapping to parallel road
-      - tunnel/GPS loss mid-recording: buffer times out and emits Kalman points; resumes matching when GPS returns
+      - very dense road network (city centre): closest-road geometry picks the correct segment
+      - tunnel/GPS loss mid-recording: pre-filter rejects bad fixes; resumes snapping when GPS recovers
 
-  - commit_8:
+  - commit_8:  # ✅ done 2026-04-04
+    title: Room → file-system migration
+    scope:
+      - Remove Room/SQLite entirely (AppDatabase, all DAOs, all entities, all old repositories)
+      - New domain models (Group, Poi, Route, RoutePoint) with String UUID IDs
+      - GroupFileRepository, PoiFileRepository, RouteFileRepository (in-memory StateFlow + JSON files)
+      - StorageManager rewrite: human-readable folder/file names
+        (groups/{Name}.json, pois/{Name}_{shortId}/, recordings/{timestamp-distance}_{shortId}/)
+      - LegacyDbMigration: one-time SQLite→JSON migration guarded by .migrated marker
+      - Wire SmartTrackProcessor + MapHolder into RecordingService (GPS snapping integration)
+      - All ViewModels, navigation, and UI updated to use new domain models and String IDs
+      - Remove Room from build.gradle.kts and libs.versions.toml
+
+  - commit_9:
     title: Background recording + incomplete recovery
     scope:
       - background location strategy
@@ -264,7 +309,7 @@ implementation_commit_order:
       - location permission revoked while recording
       - recovery prompt cancel path (route remains incomplete and visible)
 
-  - commit_9:
+  - commit_10:
     title: Library full management UX
     scope:
       - search groups/POIs/routes
@@ -282,7 +327,7 @@ implementation_commit_order:
       - mixed selection invalid states are prevented
       - parent/child visibility toggle behavior is deterministic
 
-  - commit_10:
+  - commit_11:
     title: Import pipeline (GPX/KML/GeoJSON)
     scope:
       - folder picker import
@@ -299,7 +344,7 @@ implementation_commit_order:
       - partial import succeeds (good files imported, bad files logged)
       - imported-group dedup collisions are handled per strict dedup rule
 
-  - commit_11:
+  - commit_12:
     title: Hardening + regression pass + final commit
     scope:
       - stability fixes

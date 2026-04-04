@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -163,11 +162,8 @@ fun MainScreen(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val mapHeight = maxHeight * 0.85f
-        val panelHeight = maxHeight * 0.15f
-
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxWidth().height(mapHeight)) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 MapComponent(
                     pois = pois,
                     groups = groups,
@@ -238,7 +234,6 @@ fun MainScreen(
                 onOpenLibrary = onOpenLibrary,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(panelHeight)
                     .background(MaterialTheme.colorScheme.surface),
             )
         }

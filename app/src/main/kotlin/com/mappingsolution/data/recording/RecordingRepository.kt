@@ -56,6 +56,20 @@ class RecordingRepository @Inject constructor(
         return id to name
     }
 
+    suspend fun persistPointsSync(routeId: Long, points: List<RecordingPoint>) {
+        if (points.isEmpty()) return
+        val entities = points.mapIndexed { i, pt ->
+            RoutePointEntity(
+                routeId = routeId,
+                ts = pt.ts,
+                lat = pt.lat,
+                lng = pt.lng,
+                orderIndex = i,
+            )
+        }
+        routeRepository.appendPoints(entities)
+    }
+
     fun persistPoints(routeId: Long, points: List<RecordingPoint>, orderOffset: Int) {
         if (points.isEmpty()) return
         scope.launch {
