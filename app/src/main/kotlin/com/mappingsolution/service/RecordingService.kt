@@ -14,6 +14,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.mappingsolution.MainActivity
 import com.mappingsolution.data.map.MapHolder
@@ -51,8 +52,21 @@ class RecordingService : Service() {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) = onNewLocation(location)
-        override fun onProviderDisabled(provider: String) = Unit
-        override fun onProviderEnabled(provider: String) = Unit
+        override fun onProviderDisabled(provider: String) {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val anyEnabled = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .any { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+            if (!anyEnabled) {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(NOTIF_ID, buildNotification("Recording paused", "Location unavailable — re-enable GPS"))
+            }
+        }
+        override fun onProviderEnabled(provider: String) {
+            // Refresh the notification text to drop any "location unavailable" warning
+            val st = recordingRepository.state.value as? RecordingState.Active ?: return
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, buildNotification("Recording route…", st.autoName))
+        }
     }
 
     companion object {
@@ -60,18 +74,33 @@ class RecordingService : Service() {
         const val ACTION_PAUSE = "com.mappingsolution.recording.PAUSE"
         const val ACTION_RESUME = "com.mappingsolution.recording.RESUME"
         const val ACTION_STOP = "com.mappingsolution.recording.STOP"
+        const val ACTION_RESUME_INCOMPLETE = "com.mappingsolution.recording.RESUME_INCOMPLETE"
         const val NOTIF_CHANNEL_ID = "recording_channel"
         const val NOTIF_ID = 1001
+        private const val EXTRA_ROUTE_ID = "route_id"
 
         /** Only accept GPS fixes with an accuracy circle ≤ this value (meters). */
         private const val MAX_ACCURACY_METERS = 20f
         /** Minimum displacement before we count movement (filters stationary jitter). */
         private const val MIN_MOVEMENT_METERS = 3.0
 
+        /** Location update interval/distance when battery saver is OFF. */
+        private const val NORMAL_INTERVAL_MS = 2_000L
+        private const val NORMAL_MIN_DIST_M = 2f
+
+        /** Degraded interval/distance when battery saver is ON. */
+        private const val BATTERY_SAVER_INTERVAL_MS = 5_000L
+        private const val BATTERY_SAVER_MIN_DIST_M = 10f
+
         fun startIntent(context: Context) = Intent(context, RecordingService::class.java).apply { action = ACTION_START }
         fun pauseIntent(context: Context) = Intent(context, RecordingService::class.java).apply { action = ACTION_PAUSE }
         fun resumeIntent(context: Context) = Intent(context, RecordingService::class.java).apply { action = ACTION_RESUME }
         fun stopIntent(context: Context) = Intent(context, RecordingService::class.java).apply { action = ACTION_STOP }
+        fun resumeIncompleteIntent(context: Context, routeId: String) =
+            Intent(context, RecordingService::class.java).apply {
+                action = ACTION_RESUME_INCOMPLETE
+                putExtra(EXTRA_ROUTE_ID, routeId)
+            }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -85,7 +114,13 @@ class RecordingService : Service() {
             ACTION_PAUSE -> handlePause()
             ACTION_RESUME -> handleResume()
             ACTION_STOP -> scope.launch(Dispatchers.IO) { handleStop() }
+            ACTION_RESUME_INCOMPLETE -> {
+                val routeId = intent.getStringExtra(EXTRA_ROUTE_ID) ?: run { stopSelf(); return START_STICKY }
+                startForeground(NOTIF_ID, buildNotification("Resuming recording…", "Loading…"))
+                scope.launch(Dispatchers.IO) { handleResumeIncomplete(routeId) }
+            }
             null -> {
+                // Service restarted by OS (START_STICKY) — repository state is still in memory.
                 val current = recordingRepository.state.value
                 if (current is RecordingState.Active) {
                     startForeground(NOTIF_ID, buildNotification("Recording route…", current.autoName))
@@ -112,6 +147,20 @@ class RecordingService : Service() {
                 startedAtMs = now,
             )
         )
+        startLocationUpdates()
+        startNotificationTicker()
+    }
+
+    private suspend fun handleResumeIncomplete(routeId: String) {
+        smartTrackProcessor.reset()
+        lastLocation = null
+        lastEmittedPoint = null
+        pendingPoints.clear()
+        flushedPointCount = 0
+        recordingRepository.resumeIncomplete(routeId)
+        val st = recordingRepository.state.value as? RecordingState.Active ?: run { stopSelf(); return }
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIF_ID, buildNotification("Recording route…", st.autoName))
         startLocationUpdates()
         startNotificationTicker()
     }
@@ -156,13 +205,24 @@ class RecordingService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val batterySaver = pm.isPowerSaveMode
+        val intervalMs = if (batterySaver) BATTERY_SAVER_INTERVAL_MS else NORMAL_INTERVAL_MS
+        val minDist = if (batterySaver) BATTERY_SAVER_MIN_DIST_M else NORMAL_MIN_DIST_M
+
         val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).forEach { provider ->
             runCatching {
                 if (lm.isProviderEnabled(provider)) {
-                    lm.requestLocationUpdates(provider, 2000L, 2f, locationListener, Looper.getMainLooper())
+                    lm.requestLocationUpdates(provider, intervalMs, minDist, locationListener, Looper.getMainLooper())
                 }
             }
+        }
+
+        if (batterySaver) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val st = recordingRepository.state.value as? RecordingState.Active
+            nm.notify(NOTIF_ID, buildNotification("Recording (battery saver)", st?.autoName ?: "Reduced GPS accuracy"))
         }
     }
 

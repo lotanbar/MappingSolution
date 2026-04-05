@@ -89,6 +89,22 @@ class RecordingRepository @Inject constructor(
 
     suspend fun getIncompleteRoutes() = routeFileRepository.getIncomplete()
 
+    /**
+     * Restores [RecordingState.Active] from a previously-incomplete route so that the
+     * foreground service can resume appending points to it. Call this before starting
+     * location updates so the state is ready before the first fix arrives.
+     */
+    suspend fun resumeIncomplete(routeId: String) {
+        val route = routeFileRepository.getById(routeId) ?: return
+        _state.value = RecordingState.Active(
+            routeId = route.id,
+            autoName = route.name,
+            startedAtMs = route.startedAt,
+            distanceMeters = route.distanceMeters,
+        )
+        _events.resetReplayCache()
+    }
+
     private fun formatDuration(sec: Long): String {
         val h = sec / 3600; val m = (sec % 3600) / 60; val s = sec % 60
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)

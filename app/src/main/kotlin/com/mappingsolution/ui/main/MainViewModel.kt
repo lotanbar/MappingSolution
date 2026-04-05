@@ -12,6 +12,7 @@ import com.mappingsolution.data.model.Route
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -30,5 +31,10 @@ class MainViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val routes: StateFlow<List<Route>> = routeRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Routes that were not properly stopped (app killed / battery died during recording). */
+    val incompleteRoutes: StateFlow<List<Route>> = routeRepository.observeAll()
+        .map { routes -> routes.filter { !it.didUserTapStop } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }

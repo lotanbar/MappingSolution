@@ -41,6 +41,10 @@ class RecordingViewModel @Inject constructor(
         getApplication<Application>().startService(RecordingService.resumeIntent(getApplication()))
     }
 
+    fun resumeIncomplete(routeId: String) {
+        ContextCompat.startForegroundService(getApplication(), RecordingService.resumeIncompleteIntent(getApplication(), routeId))
+    }
+
     fun stopRecording() {
         getApplication<Application>().startService(RecordingService.stopIntent(getApplication()))
     }

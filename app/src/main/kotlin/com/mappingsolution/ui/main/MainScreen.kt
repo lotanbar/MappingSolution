@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.recording.RecordingEvent
 import com.mappingsolution.data.recording.RecordingState
 import com.mappingsolution.ui.main.components.BottomActionPanel
@@ -68,12 +69,28 @@ fun MainScreen(
     val pois by viewModel.pois.collectAsState()
     val groups by viewModel.groups.collectAsState()
     val recordingState by recordingViewModel.state.collectAsState()
+    val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var showBatteryDialog by remember { mutableStateOf(false) }
     var flyToTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    // Tracks which incomplete route IDs the user has already dismissed this session
+    val dismissedIncompleteIds = remember { mutableSetOf<String>() }
+    // The incomplete route currently shown in the recovery dialog (null = no dialog)
+    var recoveryRoute by remember { mutableStateOf<Route?>(null) }
+
+    // Show recovery dialog for the first undismissed incomplete route when recording is idle
+    LaunchedEffect(incompleteRoutes, recordingState) {
+        if (recordingState is RecordingState.Idle && recoveryRoute == null) {
+            val candidate = incompleteRoutes.firstOrNull {
+                it.id !in dismissedIncompleteIds
+            }
+            if (candidate != null) recoveryRoute = candidate
+        }
+    }
 
     // Collect recording stopped events and navigate to finalize screen
     LaunchedEffect(Unit) {
@@ -124,6 +141,35 @@ fun MainScreen(
     ) { granted ->
         if (granted) checkBatteryAndStart()
         else locationError = "Location permission is required for route recording."
+    }
+
+    recoveryRoute?.let { route ->
+        AlertDialog(
+            onDismissRequest = {
+                dismissedIncompleteIds.add(route.id)
+                recoveryRoute = null
+            },
+            title = { Text("Incomplete Recording") },
+            text = {
+                Text(
+                    "\"${route.name}\" was not stopped properly.\n" +
+                    "Distance so far: ${formatDistance(route.distanceMeters)}\n\n" +
+                    "Would you like to continue this recording?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    recoveryRoute = null
+                    recordingViewModel.resumeIncomplete(route.id)
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    dismissedIncompleteIds.add(route.id)
+                    recoveryRoute = null
+                }) { Text("Dismiss") }
+            },
+        )
     }
 
     if (showBatteryDialog) {
@@ -308,3 +354,6 @@ private suspend fun fetchCurrentLocation(context: Context): Pair<Double, Double>
 
 private fun isValidCoordinate(lat: Double, lng: Double) =
     lat in -90.0..90.0 && lng in -180.0..180.0 && !(lat == 0.0 && lng == 0.0)
+
+private fun formatDistance(meters: Double): String =
+    if (meters >= 1000) "%.2f km".format(meters / 1000) else "%.0f m".format(meters)
