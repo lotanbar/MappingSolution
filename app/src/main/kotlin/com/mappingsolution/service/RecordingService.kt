@@ -50,6 +50,12 @@ class RecordingService : Service() {
     private var lastLocation: Location? = null
     private var lastEmittedPoint: RecordingPoint? = null
 
+    // --- Motion-quality state ---
+    private var recordingStartedAtMs = 0L
+    private val stationaryWindow = ArrayDeque<Location>(STATIONARY_WINDOW + 1)
+    private var isStationary = false
+    private var stationaryExitCount = 0
+
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) = onNewLocation(location)
         override fun onProviderDisabled(provider: String) {
@@ -83,6 +89,22 @@ class RecordingService : Service() {
         private const val MAX_ACCURACY_METERS = 20f
         /** Minimum displacement before we count movement (filters stationary jitter). */
         private const val MIN_MOVEMENT_METERS = 3.0
+
+        /** Discard all fixes for this long after recording starts, giving the GPS chip time to lock. */
+        private const val WARMUP_DURATION_MS = 15_000L
+
+        /** Reject a fix if it implies faster-than-this travel from the previous accepted fix. */
+        private const val MAX_SPEED_MPS = 55.6  // 200 km/h
+
+        /**
+         * Stationary detection: if this many consecutive accepted fixes are all within
+         * [STATIONARY_RADIUS_METERS] of the oldest one in the window, the user is considered
+         * stopped and new points are suppressed.
+         */
+        private const val STATIONARY_WINDOW = 5
+        private const val STATIONARY_RADIUS_METERS = 8.0
+        /** Consecutive non-stationary fixes needed to resume recording after a stop. */
+        private const val STATIONARY_EXIT_COUNT = 2
 
         /** Location update interval/distance when battery saver is OFF. */
         private const val NORMAL_INTERVAL_MS = 2_000L
@@ -140,6 +162,8 @@ class RecordingService : Service() {
         smartTrackProcessor.reset()
         lastLocation = null
         lastEmittedPoint = null
+        recordingStartedAtMs = now
+        resetMotionState()
         recordingRepository.updateState(
             RecordingState.Active(
                 routeId = routeId,
@@ -157,6 +181,8 @@ class RecordingService : Service() {
         lastEmittedPoint = null
         pendingPoints.clear()
         flushedPointCount = 0
+        recordingStartedAtMs = System.currentTimeMillis()
+        resetMotionState()
         recordingRepository.resumeIncomplete(routeId)
         val st = recordingRepository.state.value as? RecordingState.Active ?: run { stopSelf(); return }
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -182,6 +208,9 @@ class RecordingService : Service() {
                 pausedSinceMs = null,
             )
         )
+        // GPS should still be locked after a short pause — skip warmup but clear stationary state.
+        recordingStartedAtMs = now - WARMUP_DURATION_MS
+        resetMotionState()
         startLocationUpdates()
     }
 
@@ -234,16 +263,51 @@ class RecordingService : Service() {
     private fun onNewLocation(location: Location) {
         val current = recordingRepository.state.value as? RecordingState.Active ?: return
         if (current.isPaused) return
-        // Pre-filter: reject inaccurate fixes before entering the pipeline
+
+        // Pre-filter 1: reject inaccurate fixes before entering the pipeline
         if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_METERS) return
 
-        // Pre-filter: reject micro-jitter based on raw GPS displacement
+        // Pre-filter 2: warm-up — discard fixes until the GPS chip has had time to stabilise
+        if (System.currentTimeMillis() - recordingStartedAtMs < WARMUP_DURATION_MS) return
+
         val last = lastLocation
         val rawDist = if (last != null)
             haversineMeters(last.latitude, last.longitude, location.latitude, location.longitude)
         else 0.0
+
+        // Pre-filter 3: reject micro-jitter based on raw GPS displacement
         if (last != null && rawDist < MIN_MOVEMENT_METERS) return
+
+        // Pre-filter 4: reject physically impossible speed jumps (GPS cold-start scatter)
+        if (last != null) {
+            val dtSec = (location.elapsedRealtimeNanos - last.elapsedRealtimeNanos) / 1_000_000_000.0
+            if (dtSec > 0.0 && rawDist / dtSec > MAX_SPEED_MPS) return
+        }
+
         lastLocation = location
+
+        // Pre-filter 5: stationary detection — suppress recording while the user is stopped
+        stationaryWindow.addLast(location)
+        if (stationaryWindow.size > STATIONARY_WINDOW) stationaryWindow.removeFirst()
+        if (stationaryWindow.size == STATIONARY_WINDOW) {
+            val anchor = stationaryWindow.first()
+            val allClose = stationaryWindow.all {
+                haversineMeters(anchor.latitude, anchor.longitude, it.latitude, it.longitude) <= STATIONARY_RADIUS_METERS
+            }
+            if (allClose) {
+                isStationary = true
+                stationaryExitCount = 0
+                return
+            }
+            if (isStationary) {
+                stationaryExitCount++
+                if (stationaryExitCount < STATIONARY_EXIT_COUNT) return
+                isStationary = false
+                stationaryExitCount = 0
+            }
+        } else if (isStationary) {
+            return
+        }
 
         scope.launch {
             // Run Kalman → road snap → mode hysteresis on the captured location
@@ -277,6 +341,12 @@ class RecordingService : Service() {
         pendingPoints.clear()
         recordingRepository.persistPoints(routeId, toFlush, flushedPointCount)
         flushedPointCount += toFlush.size
+    }
+
+    private fun resetMotionState() {
+        stationaryWindow.clear()
+        isStationary = false
+        stationaryExitCount = 0
     }
 
     private fun startNotificationTicker() {

@@ -4,18 +4,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.mappingsolution.service.RecordingService
 import com.mappingsolution.ui.library.GroupFormScreen
 import com.mappingsolution.ui.library.GroupFormViewModel
 import com.mappingsolution.ui.library.IconPickerScreen
 import com.mappingsolution.ui.library.LibraryScreen
 import com.mappingsolution.ui.main.MainScreen
-import com.mappingsolution.ui.poi.PoiDetailScreen
+import com.mappingsolution.ui.detail.ItemDetailScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
 import com.mappingsolution.ui.poi.media.MediaPreviewScreen
 import com.mappingsolution.ui.recording.RouteFinalizeScreen
@@ -26,14 +28,18 @@ private const val ROUTE_GROUP_FORM = "group_form"
 private const val ROUTE_GROUP_FORM_EDIT = "group_form/{groupId}"
 private const val ROUTE_ICON_PICKER = "icon_picker"
 private const val ROUTE_POI_FORM_NEW = "poi_form_new?lat={lat}&lng={lng}"
-private const val ROUTE_POI_DETAIL = "poi_detail/{poiId}"
+private const val ROUTE_ITEM_DETAIL = "item_detail/{type}/{id}"
 private const val ROUTE_POI_MEDIA_PREVIEW = "poi_media_preview/{poiId}?startIndex={startIndex}"
 private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
 private const val ROUTE_ROUTE_FINALIZE = "route_finalize/{routeId}"
+/** Edit a saved route from the Library (no discard guard). */
+private const val ROUTE_ROUTE_EDIT = "route_edit/{routeId}"
 
 private const val KEY_GROUP_ID = "groupId"
 private const val KEY_POI_ID = "poiId"
 private const val KEY_ROUTE_ID = "routeId"
+private const val KEY_DETAIL_TYPE = "type"
+private const val KEY_DETAIL_ID = "id"
 private const val KEY_START_INDEX = "startIndex"
 private const val KEY_LAT = "lat"
 private const val KEY_LNG = "lng"
@@ -50,7 +56,8 @@ fun AppNavGraph() {
             MainScreen(
                 onOpenLibrary = { navController.navigate(ROUTE_LIBRARY) },
                 onAddPoi = { lat, lng -> navController.navigate("poi_form_new?lat=$lat&lng=$lng") },
-                onPoiTapped = { poiId -> navController.navigate("poi_detail/$poiId") },
+                onPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
+                onRouteTapped = { routeId -> navController.navigate("item_detail/route/$routeId") },
                 onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
             )
         }
@@ -73,12 +80,16 @@ fun AppNavGraph() {
         }
 
         composable(
-            route = ROUTE_POI_DETAIL,
-            arguments = listOf(navArgument(KEY_POI_ID) { type = NavType.StringType }),
+            route = ROUTE_ITEM_DETAIL,
+            arguments = listOf(
+                navArgument(KEY_DETAIL_TYPE) { type = NavType.StringType },
+                navArgument(KEY_DETAIL_ID) { type = NavType.StringType },
+            ),
         ) {
-            PoiDetailScreen(
+            ItemDetailScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToEdit = { poiId -> navController.navigate("poi_form_edit/$poiId") },
+                onNavigateToEditPoi = { poiId -> navController.navigate("poi_form_edit/$poiId") },
+                onNavigateToEditRoute = { routeId -> navController.navigate("route_edit/$routeId") },
                 onOpenMediaPreview = { poiId, index, paths ->
                     navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
                     navController.navigate("poi_media_preview/$poiId?startIndex=$index")
@@ -113,10 +124,19 @@ fun AppNavGraph() {
         }
 
         composable(ROUTE_LIBRARY) {
+            val context = LocalContext.current
             LibraryScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onCreateGroup = { navController.navigate(ROUTE_GROUP_FORM) },
                 onEditGroup = { groupId -> navController.navigate("group_form/$groupId") },
+                onEditPoi = { poiId -> navController.navigate("poi_form_edit/$poiId") },
+                onEditRoute = { routeId -> navController.navigate("route_edit/$routeId") },
+                onContinueRecording = { routeId ->
+                    context.startService(RecordingService.resumeIncompleteIntent(context, routeId))
+                    navController.navigate(ROUTE_MAIN) {
+                        popUpTo(ROUTE_MAIN) { inclusive = false }
+                    }
+                },
             )
         }
 
@@ -183,6 +203,18 @@ fun AppNavGraph() {
             val routeId = backStackEntry.arguments?.getString(KEY_ROUTE_ID) ?: return@composable
             RouteFinalizeScreen(
                 routeId = routeId,
+                onDone = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = ROUTE_ROUTE_EDIT,
+            arguments = listOf(navArgument(KEY_ROUTE_ID) { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val routeId = backStackEntry.arguments?.getString(KEY_ROUTE_ID) ?: return@composable
+            RouteFinalizeScreen(
+                routeId = routeId,
+                isLibraryEdit = true,
                 onDone = { navController.popBackStack() },
             )
         }

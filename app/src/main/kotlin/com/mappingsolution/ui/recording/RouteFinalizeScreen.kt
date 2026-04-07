@@ -47,6 +47,7 @@ private const val DISCARD_COOLDOWN_SEC = 5
 @Composable
 fun RouteFinalizeScreen(
     routeId: String,
+    isLibraryEdit: Boolean = false,
     onDone: () -> Unit,
     viewModel: RouteFinalizeViewModel = hiltViewModel(),
 ) {
@@ -57,7 +58,8 @@ fun RouteFinalizeScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
 
     fun handleBack() {
-        if (state.distanceMeters >= DISCARD_GUARD_THRESHOLD_M) showDiscardDialog = true
+        // Discard guard only applies during post-recording finalize, not library edits
+        if (!isLibraryEdit && state.distanceMeters >= DISCARD_GUARD_THRESHOLD_M) showDiscardDialog = true
         else onDone()
     }
 
@@ -73,7 +75,7 @@ fun RouteFinalizeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Save Route") },
+                title = { Text(if (isLibraryEdit) "Edit Route" else "Save Route") },
                 navigationIcon = {
                     IconButton(onClick = ::handleBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

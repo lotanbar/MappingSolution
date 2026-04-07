@@ -33,7 +33,11 @@ class StorageManager @Inject constructor() {
     fun renamePoiFolder(oldName: String, newName: String, id: String) {
         val oldDir = File(getPoisDir(), poiFolderName(oldName, id))
         val newDir = File(getPoisDir(), poiFolderName(newName, id))
-        if (oldDir.exists() && oldDir != newDir) oldDir.renameTo(newDir)
+        if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
+            oldDir.renameTo(newDir)
+            // Remove stale old dir if rename didn't fully move it (seen on some Android versions)
+            if (oldDir.exists()) oldDir.deleteRecursively()
+        }
     }
 
     // ── Recordings — folder is "{sanitized-name}_{first8ofId}" ───────────────
@@ -47,7 +51,11 @@ class StorageManager @Inject constructor() {
     fun renameRecordingFolder(oldName: String, newName: String, id: String) {
         val oldDir = File(getRecordingsDir(), recordingFolderName(oldName, id))
         val newDir = File(getRecordingsDir(), recordingFolderName(newName, id))
-        if (oldDir.exists() && oldDir != newDir) oldDir.renameTo(newDir)
+        if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
+            oldDir.renameTo(newDir)
+            // Remove stale old dir if rename didn't fully move it (seen on some Android versions)
+            if (oldDir.exists()) oldDir.deleteRecursively()
+        }
     }
 
     fun getTempDir(): File = File(rootDir, "temp").also { it.mkdirs() }

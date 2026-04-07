@@ -27,13 +27,29 @@ class RouteFileRepository @Inject constructor(private val storageManager: Storag
 
     private fun loadAll() {
         val dir = storageManager.getRecordingsDir()
-        _routes.value = dir.listFiles { f -> f.isDirectory }
+        val loaded = dir.listFiles { f -> f.isDirectory }
             ?.mapNotNull { recordingDir ->
                 val jsonFile = File(recordingDir, "recording.json")
-                if (jsonFile.exists()) readRoute(jsonFile) else null
+                if (jsonFile.exists()) readRoute(jsonFile)?.let { it to recordingDir } else null
             }
-            ?.sortedBy { it.startedAt }
             ?: emptyList()
+
+        // Deduplicate by ID: if two dirs share the same route ID keep the newest,
+        // delete the stale one. This cleans up leftover dirs from incomplete renames.
+        val deduped = loaded
+            .groupBy { (route, _) -> route.id }
+            .values
+            .map { group ->
+                if (group.size > 1) {
+                    val sorted = group.sortedByDescending { (route, _) -> route.updatedAt }
+                    sorted.drop(1).forEach { (_, staleDir) -> staleDir.deleteRecursively() }
+                    sorted.first().first
+                } else {
+                    group.first().first
+                }
+            }
+
+        _routes.value = deduped.sortedBy { it.startedAt }
     }
 
     fun observeAll(): Flow<List<Route>> = _routes

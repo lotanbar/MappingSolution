@@ -9,18 +9,24 @@ import com.mappingsolution.data.map.MapHolder
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.model.RoutePoint
+import com.mappingsolution.data.prefs.ViewportPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MainViewModel @Inject constructor(
     groupRepository: GroupFileRepository,
     poiRepository: PoiFileRepository,
-    routeRepository: RouteFileRepository,
+    private val routeRepository: RouteFileRepository,
     val mapHolder: MapHolder,
 ) : ViewModel() {
 
@@ -37,4 +43,23 @@ class MainViewModel @Inject constructor(
     val incompleteRoutes: StateFlow<List<Route>> = routeRepository.observeAll()
         .map { routes -> routes.filter { !it.didUserTapStop } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Points for all visible completed routes, keyed by route ID. Used to render polylines on the map. */
+    val routePoints: StateFlow<Map<String, List<RoutePoint>>> = routeRepository.observeAll()
+        .flatMapLatest { routes ->
+            flow {
+                val result = routes
+                    .filter { it.isVisible && it.didUserTapStop }
+                    .associate { route -> route.id to routeRepository.getPoints(route.id) }
+                emit(result)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Reads last known viewport — always fresh (in-memory first, then disk). */
+    val initialCamera: ViewportPreference.SavedCamera? get() = mapHolder.loadCamera()
+
+    fun saveCameraPosition(lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) {
+        mapHolder.saveCamera(lat, lng, zoom, bearing, tilt)
+    }
 }

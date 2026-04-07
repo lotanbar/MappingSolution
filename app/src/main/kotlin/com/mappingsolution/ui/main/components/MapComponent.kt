@@ -30,9 +30,13 @@ import com.mappingsolution.BuildConfig
 import com.mappingsolution.createPinBitmap
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
+import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.model.RoutePoint
 import com.mappingsolution.data.recording.RecordingPoint
 import com.mappingsolution.ui.common.IconCatalog
+import com.mappingsolution.data.prefs.ViewportPreference
 import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
@@ -92,9 +96,14 @@ private fun createPoiPin(
 fun MapComponent(
     pois: List<Poi> = emptyList(),
     groups: List<Group> = emptyList(),
+    routes: List<Route> = emptyList(),
+    routePoints: Map<String, List<RoutePoint>> = emptyMap(),
     liveRoutePoints: List<RecordingPoint> = emptyList(),
     flyToLocation: Pair<Double, Double>? = null,
+    initialCamera: ViewportPreference.SavedCamera? = null,
+    onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
     onPoiTapped: (String) -> Unit = {},
+    onRouteTapped: (String) -> Unit = {},
     onMapReady: (MapLibreMap) -> Unit = {},
     onMapDisposed: () -> Unit = {},
     onMapError: (String) -> Unit = {},
@@ -105,6 +114,8 @@ fun MapComponent(
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val onPoiTappedRef = rememberUpdatedState(onPoiTapped)
+    val onRouteTappedRef = rememberUpdatedState(onRouteTapped)
+    val onCameraIdleRef = rememberUpdatedState(onCameraIdle)
 
     MapLibre.getInstance(context)
 
@@ -142,6 +153,12 @@ fun MapComponent(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            // Snapshot camera position so it can be restored when navigating back
+            mapState.value?.cameraPosition?.let { pos ->
+                pos.target?.let { target ->
+                    onCameraIdleRef.value(target.latitude, target.longitude, pos.zoom, pos.bearing, pos.tilt)
+                }
+            }
             onMapDisposed()
         }
     }
@@ -164,7 +181,10 @@ fun MapComponent(
         val style = map.style ?: return@LaunchedEffect
         val source = style.getSource("poi-source") as? GeoJsonSource ?: return@LaunchedEffect
 
-        val features = pois.filter { it.isVisible }.map { poi ->
+        val hiddenGroupIds = groups.filter { !it.isVisible }.map { it.id }.toSet()
+        val features = pois.filter { poi ->
+            poi.isVisible && (poi.groupId == null || poi.groupId !in hiddenGroupIds)
+        }.map { poi ->
             val iconId = "pin-${poi.groupId ?: "default"}"
             val props = JsonObject().apply {
                 addProperty("poiId", poi.id)
@@ -181,6 +201,30 @@ fun MapComponent(
         val (lat, lng) = flyToLocation ?: return@LaunchedEffect
         val map = mapState.value ?: return@LaunchedEffect
         map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 17.0))
+    }
+
+    // Re-render saved route polylines whenever routes/points/visibility change
+    LaunchedEffect(routes, routePoints, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val source = style.getSource("saved-routes-source") as? GeoJsonSource ?: return@LaunchedEffect
+
+        val features = routes.filter { it.isVisible }.mapNotNull { route ->
+            val pts = routePoints[route.id] ?: return@mapNotNull null
+            if (pts.size < 2) return@mapNotNull null
+            val linePoints = pts.map { Point.fromLngLat(it.lng, it.lat) }
+            // Strip leading #FF alpha prefix if present (stored as #AARRGGBB, MapLibre needs #RRGGBB)
+            val mapColor = route.color.let { c ->
+                if (c.length == 9 && c.startsWith("#")) "#${c.substring(3)}" else c
+            }
+            val props = JsonObject().apply {
+                addProperty("routeId", route.id)
+                addProperty("routeColor", mapColor)
+            }
+            Feature.fromGeometry(LineString.fromLngLats(linePoints), props)
+        }
+        source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
     // Re-render live route polyline whenever points change
@@ -208,7 +252,16 @@ fun MapComponent(
                     style.addSource(
                         GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>()))
                     )
+                    style.addSource(GeoJsonSource("saved-routes-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addSource(GeoJsonSource("live-route-source"))
+                    style.addLayer(
+                        LineLayer("saved-routes-lines", "saved-routes-source").withProperties(
+                            PropertyFactory.lineColor(Expression.get("routeColor")),
+                            PropertyFactory.lineWidth(3f),
+                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+                        )
+                    )
                     style.addLayer(
                         LineLayer("live-route-line", "live-route-source").withProperties(
                             PropertyFactory.lineColor("#FF5722"),
@@ -227,18 +280,49 @@ fun MapComponent(
                     )
                     map.addOnMapClickListener { latLng ->
                         val pt = map.projection.toScreenLocation(latLng)
-                        val hit = map.queryRenderedFeatures(
-                            RectF(pt.x - 20f, pt.y - 20f, pt.x + 20f, pt.y + 20f),
-                            "poi-symbols",
-                        )
-                        if (hit.isNotEmpty()) {
-                            val poiId = hit[0].getStringProperty("poiId")
+                        val rect = RectF(pt.x - 24f, pt.y - 24f, pt.x + 24f, pt.y + 24f)
+                        // POIs take priority
+                        val poiHit = map.queryRenderedFeatures(rect, "poi-symbols")
+                        if (poiHit.isNotEmpty()) {
+                            val poiId = poiHit[0].getStringProperty("poiId")
                             if (poiId != null) {
                                 onPoiTappedRef.value(poiId)
                                 return@addOnMapClickListener true
                             }
                         }
+                        // Saved routes — wider tolerance for thin lines
+                        val routeRect = RectF(pt.x - 30f, pt.y - 30f, pt.x + 30f, pt.y + 30f)
+                        val routeHit = map.queryRenderedFeatures(routeRect, "saved-routes-lines")
+                        if (routeHit.isNotEmpty()) {
+                            val routeId = routeHit[0].getStringProperty("routeId")
+                            if (routeId != null) {
+                                onRouteTappedRef.value(routeId)
+                                return@addOnMapClickListener true
+                            }
+                        }
                         false
+                    }
+                    // Save camera position whenever the user stops panning/zooming
+                    map.addOnCameraIdleListener {
+                        val pos = map.cameraPosition
+                        val target = pos.target ?: return@addOnCameraIdleListener
+                        onCameraIdleRef.value(
+                            target.latitude,
+                            target.longitude,
+                            pos.zoom,
+                            pos.bearing,
+                            pos.tilt,
+                        )
+                    }
+                    // Restore last known viewport (overrides default world view)
+                    initialCamera?.let { cam ->
+                        val restored = CameraPosition.Builder()
+                            .target(org.maplibre.android.geometry.LatLng(cam.lat, cam.lng))
+                            .zoom(cam.zoom)
+                            .bearing(cam.bearing)
+                            .tilt(cam.tilt)
+                            .build()
+                        map.moveCamera(CameraUpdateFactory.newCameraPosition(restored))
                     }
                     styleReady.value = true
                     onMapReady(map)

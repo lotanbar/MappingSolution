@@ -9,6 +9,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -60,6 +61,7 @@ fun MainScreen(
     onOpenLibrary: () -> Unit,
     onAddPoi: (lat: Double, lng: Double) -> Unit,
     onPoiTapped: (poiId: String) -> Unit,
+    onRouteTapped: (routeId: String) -> Unit = {},
     onNavigateToFinalize: (routeId: String) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel(),
     recordingViewModel: RecordingViewModel = hiltViewModel(),
@@ -68,11 +70,14 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val pois by viewModel.pois.collectAsState()
     val groups by viewModel.groups.collectAsState()
+    val routes by viewModel.routes.collectAsState()
+    val routePoints by viewModel.routePoints.collectAsState()
     val recordingState by recordingViewModel.state.collectAsState()
     val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
+    var locationServicesDisabled by remember { mutableStateOf(false) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var showBatteryDialog by remember { mutableStateOf(false) }
     var flyToTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -116,6 +121,25 @@ fun MainScreen(
         }
     }
 
+    // Requests POST_NOTIFICATIONS on Android 13+, then proceeds to battery check.
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // Proceed regardless of grant — the service can still run without a visible notification.
+        checkBatteryAndStart()
+    }
+
+    fun checkNotifPermAndStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            checkBatteryAndStart()
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -135,11 +159,11 @@ fun MainScreen(
         }
     }
 
-    // Separate permission launcher for recording
+    // Separate permission launcher for recording (location)
     val recordingPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) checkBatteryAndStart()
+        if (granted) checkNotifPermAndStart()
         else locationError = "Location permission is required for route recording."
     }
 
@@ -196,6 +220,23 @@ fun MainScreen(
         )
     }
 
+    if (locationServicesDisabled) {
+        AlertDialog(
+            onDismissRequest = { locationServicesDisabled = false },
+            title = { Text("Location Services Off") },
+            text = { Text("GPS and network location are disabled on this device. Enable location services in your device settings to use this feature.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    locationServicesDisabled = false
+                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { locationServicesDisabled = false }) { Text("Not Now") }
+            },
+        )
+    }
+
     if (locationError != null) {
         AlertDialog(
             onDismissRequest = { locationError = null },
@@ -213,10 +254,15 @@ fun MainScreen(
                 MapComponent(
                     pois = pois,
                     groups = groups,
+                    routes = routes,
+                    routePoints = routePoints,
                     onPoiTapped = onPoiTapped,
+                    onRouteTapped = onRouteTapped,
                     onMapError = { mapError = it },
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
                     flyToLocation = flyToTarget,
+                    initialCamera = viewModel.initialCamera,
+                    onCameraIdle = viewModel::saveCameraPosition,
                     onMapReady = { map -> viewModel.mapHolder.register(map) },
                     onMapDisposed = { viewModel.mapHolder.unregister() },
                     modifier = Modifier.fillMaxSize(),
@@ -243,17 +289,25 @@ fun MainScreen(
             }
             BottomActionPanel(
                 onFlyToLocation = {
-                    scope.launch {
-                        val loc = withTimeoutOrNull(10_000L) { fetchCurrentLocation(context) }
-                        if (loc != null) flyToTarget = loc
-                        else locationError = "Could not determine location."
+                    if (!isLocationEnabled(context)) {
+                        locationServicesDisabled = true
+                    } else {
+                        scope.launch {
+                            val loc = withTimeoutOrNull(10_000L) { fetchCurrentLocation(context) }
+                            if (loc != null) flyToTarget = loc
+                            else locationError = "Could not get a GPS fix. Try moving outdoors or waiting a moment."
+                        }
                     }
                 },
                 onAddPoi = {
                     val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION
                     ) == PackageManager.PERMISSION_GRANTED
-                    if (hasPerm) {
+                    if (!hasPerm) {
+                        permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    } else if (!isLocationEnabled(context)) {
+                        locationServicesDisabled = true
+                    } else {
                         scope.launch {
                             isFetchingLocation = true
                             val loc = withTimeoutOrNull(15_000L) { fetchCurrentLocation(context) }
@@ -261,18 +315,16 @@ fun MainScreen(
                             if (loc != null) {
                                 onAddPoi(loc.first, loc.second)
                             } else {
-                                locationError = "Could not determine location. Try again outdoors or wait for a GPS fix."
+                                locationError = "Could not get a GPS fix. Try again outdoors or wait for a signal."
                             }
                         }
-                    } else {
-                        permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 },
                 onRecordRoute = {
                     val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION
                     ) == PackageManager.PERMISSION_GRANTED
-                    if (hasPerm) checkBatteryAndStart()
+                    if (hasPerm) checkNotifPermAndStart()
                     else recordingPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 },
                 recordingState = recordingState,
@@ -354,6 +406,14 @@ private suspend fun fetchCurrentLocation(context: Context): Pair<Double, Double>
 
 private fun isValidCoordinate(lat: Double, lng: Double) =
     lat in -90.0..90.0 && lng in -180.0..180.0 && !(lat == 0.0 && lng == 0.0)
+
+/** Returns true if at least one location provider (GPS or network) is enabled on the device. */
+private fun isLocationEnabled(context: Context): Boolean {
+    val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    return listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).any {
+        runCatching { lm.isProviderEnabled(it) }.getOrDefault(false)
+    }
+}
 
 private fun formatDistance(meters: Double): String =
     if (meters >= 1000) "%.2f km".format(meters / 1000) else "%.0f m".format(meters)
