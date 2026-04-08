@@ -99,6 +99,7 @@ fun MapComponent(
     routes: List<Route> = emptyList(),
     routePoints: Map<String, List<RoutePoint>> = emptyMap(),
     liveRoutePoints: List<RecordingPoint> = emptyList(),
+    liveRouteColor: String = "#FFFF5722",
     flyToLocation: Pair<Double, Double>? = null,
     initialCamera: ViewportPreference.SavedCamera? = null,
     onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
@@ -196,11 +197,16 @@ fun MapComponent(
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
-    // Fly to requested location
+    // Fly to requested location and reset bearing to north
     LaunchedEffect(flyToLocation) {
         val (lat, lng) = flyToLocation ?: return@LaunchedEffect
         val map = mapState.value ?: return@LaunchedEffect
-        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), 17.0))
+        val camera = CameraPosition.Builder()
+            .target(LatLng(lat, lng))
+            .zoom(17.0)
+            .bearing(0.0)
+            .build()
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(camera))
     }
 
     // Re-render saved route polylines whenever routes/points/visibility change
@@ -227,6 +233,18 @@ fun MapComponent(
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
+    // Update live route line color when the user changes it mid-recording
+    LaunchedEffect(liveRouteColor, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val mapColor = liveRouteColor.let { c ->
+            if (c.length == 9 && c.startsWith("#")) "#${c.substring(3)}" else c
+        }
+        (style.getLayer("live-route-line") as? LineLayer)
+            ?.setProperties(PropertyFactory.lineColor(mapColor))
+    }
+
     // Re-render live route polyline whenever points change
     LaunchedEffect(liveRoutePoints, styleReady.value) {
         val map = mapState.value ?: return@LaunchedEffect
@@ -248,6 +266,7 @@ fun MapComponent(
             }
             mapView.getMapAsync { map ->
                 mapState.value = map
+                map.uiSettings.isCompassEnabled = false
                 map.setStyle(Style.Builder().fromUri(styleUrl())) { style ->
                     style.addSource(
                         GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>()))

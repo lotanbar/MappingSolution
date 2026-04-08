@@ -5,7 +5,9 @@ import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.model.RoutePoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,11 +23,12 @@ import javax.inject.Singleton
 
 private const val DEFAULT_ROUTE_COLOR = "#FFFF5722"
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class RecordingRepository @Inject constructor(
     private val routeFileRepository: RouteFileRepository,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
     private val _state = MutableStateFlow<RecordingState>(RecordingState.Idle)
     val state: StateFlow<RecordingState> = _state.asStateFlow()
@@ -60,7 +63,7 @@ class RecordingRepository @Inject constructor(
         )
     }
 
-    fun persistPoints(routeId: String, points: List<RecordingPoint>, orderOffset: Int) {
+    fun persistPoints(routeId: String, points: List<RecordingPoint>) {
         if (points.isEmpty()) return
         scope.launch {
             routeFileRepository.appendPoints(
@@ -68,6 +71,17 @@ class RecordingRepository @Inject constructor(
                 points.map { RoutePoint(ts = it.ts, lat = it.lat, lng = it.lng) }
             )
         }
+    }
+
+    /**
+     * Suspends until all previously queued async point-write coroutines have completed.
+     *
+     * Because [scope] is backed by a single-threaded executor ([Dispatchers.IO.limitedParallelism(1)]),
+     * dispatching an empty coroutine onto it and awaiting its result guarantees that every
+     * previously enqueued write has finished before this function returns.
+     */
+    suspend fun awaitPendingWrites() {
+        scope.async { }.await()
     }
 
     suspend fun finalizeStop(routeId: String, distanceMeters: Double, durationSec: Long) {
@@ -87,6 +101,15 @@ class RecordingRepository @Inject constructor(
         _events.emit(RecordingEvent.Stopped(routeId))
     }
 
+    fun updateLiveColor(color: String) {
+        val current = _state.value as? RecordingState.Active ?: return
+        _state.value = current.copy(color = color)
+        scope.launch {
+            val route = routeFileRepository.getById(current.routeId) ?: return@launch
+            routeFileRepository.update(route.copy(color = color))
+        }
+    }
+
     suspend fun getIncompleteRoutes() = routeFileRepository.getIncomplete()
 
     /**
@@ -101,6 +124,7 @@ class RecordingRepository @Inject constructor(
             autoName = route.name,
             startedAtMs = route.startedAt,
             distanceMeters = route.distanceMeters,
+            color = route.color,
         )
         _events.resetReplayCache()
     }

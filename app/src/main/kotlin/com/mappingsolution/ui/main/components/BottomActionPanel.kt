@@ -45,6 +45,7 @@ fun BottomActionPanel(
     onPauseRecording: () -> Unit = {},
     onResumeRecording: () -> Unit = {},
     onStopRecording: () -> Unit = {},
+    onColorChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isRecording = recordingState is RecordingState.Active
@@ -136,6 +137,7 @@ fun BottomActionPanel(
                     onPause = onPauseRecording,
                     onResume = onResumeRecording,
                     onStop = onStopRecording,
+                    onColorChange = onColorChange,
                 )
             }
         }

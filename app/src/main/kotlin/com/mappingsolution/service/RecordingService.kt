@@ -30,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -48,7 +49,9 @@ class RecordingService : Service() {
     private val pendingPoints = mutableListOf<RecordingPoint>()
     private var flushedPointCount = 0
     private var lastLocation: Location? = null
+    private var lastLocationAcceptedMs = 0L   // wall-clock time of the last accepted fix
     private var lastEmittedPoint: RecordingPoint? = null
+    private val isStopping = AtomicBoolean(false)
 
     // --- Motion-quality state ---
     private var recordingStartedAtMs = 0L
@@ -86,15 +89,15 @@ class RecordingService : Service() {
         private const val EXTRA_ROUTE_ID = "route_id"
 
         /** Only accept GPS fixes with an accuracy circle ≤ this value (meters). */
-        private const val MAX_ACCURACY_METERS = 20f
+        private const val MAX_ACCURACY_METERS = 50f
         /** Minimum displacement before we count movement (filters stationary jitter). */
-        private const val MIN_MOVEMENT_METERS = 3.0
+        private const val MIN_MOVEMENT_METERS = 5.0
 
         /** Discard all fixes for this long after recording starts, giving the GPS chip time to lock. */
         private const val WARMUP_DURATION_MS = 15_000L
 
         /** Reject a fix if it implies faster-than-this travel from the previous accepted fix. */
-        private const val MAX_SPEED_MPS = 55.6  // 200 km/h
+        private const val MAX_SPEED_MPS = 41.7  // 150 km/h — allows all road speeds, catches GPS teleports
 
         /**
          * Stationary detection: if this many consecutive accepted fixes are all within
@@ -157,6 +160,7 @@ class RecordingService : Service() {
     }
 
     private suspend fun handleStart() {
+        isStopping.set(false)
         val (routeId, name) = recordingRepository.createRoute()
         val now = System.currentTimeMillis()
         smartTrackProcessor.reset()
@@ -215,16 +219,23 @@ class RecordingService : Service() {
     }
 
     private suspend fun handleStop() {
+        if (!isStopping.compareAndSet(false, true)) return
         stopLocationUpdates()
         val current = recordingRepository.state.value as? RecordingState.Active ?: run { stopSelf(); return }
-        // Flush remaining points synchronously — finalizeStop renames the folder,
-        // so we must finish writing before that rename happens.
+        // Flush the spike-detector's buffered pending point (the last GPS fix is always held
+        // back by one cycle to enable spike detection; release it now that recording is done).
+        smartTrackProcessor.flushPending()?.let { pendingPoints.add(it) }
+        // Queue any remaining in-memory points through the serialized write scope.
         if (pendingPoints.isNotEmpty()) {
             val toFlush = pendingPoints.toList()
             pendingPoints.clear()
-            recordingRepository.persistPointsSync(current.routeId, toFlush)
+            recordingRepository.persistPoints(current.routeId, toFlush)
             flushedPointCount += toFlush.size
         }
+        // Block until every previously queued async write has finished.  This must happen
+        // before finalizeStop renames the recording folder; otherwise in-flight writes
+        // targeting the old path will fail silently and their points will be lost.
+        recordingRepository.awaitPendingWrites()
         val now = System.currentTimeMillis()
         val durationSec = current.elapsedMs(now) / 1000L
         recordingRepository.finalizeStop(current.routeId, current.distanceMeters, durationSec)
@@ -278,13 +289,18 @@ class RecordingService : Service() {
         // Pre-filter 3: reject micro-jitter based on raw GPS displacement
         if (last != null && rawDist < MIN_MOVEMENT_METERS) return
 
-        // Pre-filter 4: reject physically impossible speed jumps (GPS cold-start scatter)
+        // Pre-filter 4: reject physically impossible speed jumps.
+        // Use actual wall-clock time between onNewLocation calls — NOT elapsedRealtimeNanos,
+        // which can be stale (negative or inflated) for NETWORK provider fixes, silently
+        // bypassing the check and allowing multi-km teleports through.
+        val nowMs = System.currentTimeMillis()
         if (last != null) {
-            val dtSec = (location.elapsedRealtimeNanos - last.elapsedRealtimeNanos) / 1_000_000_000.0
+            val dtSec = (nowMs - lastLocationAcceptedMs) / 1000.0
             if (dtSec > 0.0 && rawDist / dtSec > MAX_SPEED_MPS) return
         }
 
         lastLocation = location
+        lastLocationAcceptedMs = nowMs
 
         // Pre-filter 5: stationary detection — suppress recording while the user is stopped
         stationaryWindow.addLast(location)
@@ -310,8 +326,9 @@ class RecordingService : Service() {
         }
 
         scope.launch {
-            // Run Kalman → road snap → mode hysteresis on the captured location
-            val point = smartTrackProcessor.process(location, mapHolder.map)
+            // Run Kalman → road snap → mode hysteresis → spike detector on the captured location.
+            // Returns null when the fix is being buffered (first fix) or was discarded.
+            val point = smartTrackProcessor.process(location, mapHolder.map) ?: return@launch
 
             // Accumulate distance from the last emitted (smoothed/snapped) point
             val prevEmit = lastEmittedPoint
@@ -339,7 +356,7 @@ class RecordingService : Service() {
         if (pendingPoints.isEmpty()) return
         val toFlush = pendingPoints.toList()
         pendingPoints.clear()
-        recordingRepository.persistPoints(routeId, toFlush, flushedPointCount)
+        recordingRepository.persistPoints(routeId, toFlush)
         flushedPointCount += toFlush.size
     }
 

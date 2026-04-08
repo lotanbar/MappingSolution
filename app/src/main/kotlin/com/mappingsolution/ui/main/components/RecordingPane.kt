@@ -1,10 +1,13 @@
 package com.mappingsolution.ui.main.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -18,14 +21,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mappingsolution.data.recording.RecordingState
+import com.mappingsolution.ui.library.components.ColorPickerDialog
+import com.mappingsolution.ui.library.components.parseHex
 import kotlinx.coroutines.delay
 
 /** Collapsible pane content shown below the main action row during an active recording. */
@@ -35,14 +43,27 @@ fun RecordingPane(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    onColorChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var showColorPicker by remember { mutableStateOf(false) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(1000L)
             nowMs = System.currentTimeMillis()
         }
+    }
+
+    if (showColorPicker) {
+        ColorPickerDialog(
+            initialHex = state.color,
+            onConfirm = { hex ->
+                onColorChange(hex)
+                showColorPicker = false
+            },
+            onDismiss = { showColorPicker = false },
+        )
     }
 
     HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
@@ -90,6 +111,17 @@ fun RecordingPane(
                 contentDescription = "Stop recording",
                 tint = Color.Red,
                 modifier = Modifier.size(32.dp),
+            )
+        }
+        // Color swatch — tap to change the live route color
+        val trackColor = parseHex(state.color)
+        IconButton(onClick = { showColorPicker = true }, modifier = Modifier.size(56.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .drawBehind { drawCircle(trackColor) }
+                    .border(2.dp, Color.White.copy(alpha = 0.7f), CircleShape),
             )
         }
     }

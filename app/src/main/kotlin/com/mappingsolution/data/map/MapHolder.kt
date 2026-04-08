@@ -23,14 +23,28 @@ class MapHolder @Inject constructor(
     @Volatile
     private var lastCamera: ViewportPreference.SavedCamera? = null
 
+    @Volatile
+    private var _mapVisible = false
+
     val map: MapLibreMap? get() = _map
 
     fun register(map: MapLibreMap) {
         _map = map
+        _mapVisible = true
     }
 
     fun unregister() {
+        _mapVisible = false
         _map = null
+    }
+
+    /**
+     * Called when recording stops while the map composable is off-screen.
+     * [onMapDisposed] skipped [unregister] to keep road snapping alive during the recording;
+     * this releases the map reference now that it's no longer needed.
+     */
+    fun unregisterIfNotVisible() {
+        if (!_mapVisible) _map = null
     }
 
     fun saveCamera(lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) {

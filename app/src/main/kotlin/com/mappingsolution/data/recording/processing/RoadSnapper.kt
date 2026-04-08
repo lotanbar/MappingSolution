@@ -4,6 +4,7 @@ import android.graphics.PointF
 import android.graphics.RectF
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
@@ -40,9 +41,9 @@ class RoadSnapper {
      * Tries to project [smoothLat]/[smoothLng] onto the nearest road segment
      * that is currently rendered by [map].
      *
-     * Queries every layer whose ID starts with "road" — the set present in
-     * the MapTiler satellite-hybrid style (e.g. road_motorway, road_primary,
-     * road_secondary, road_tertiary, road_minor, road_path …).
+     * Queries every navigable [LineLayer] whose ID starts with "Road" or "Path" (case-insensitive)
+     * — covering the layers present in the MapTiler satellite-hybrid style:
+     * "Road" (all road classes), "Path" (paved paths/trails), "Path minor" (unpaved/narrow trails).
      *
      * @param travelBearingDeg  GPS heading in degrees (0 = north). When provided, roads
      *                          running perpendicular to travel are penalised in the scoring.
@@ -66,9 +67,18 @@ class RoadSnapper {
     ): Pair<Double, Double>? {
         val style = map.style ?: return null
 
-        // Collect road layer IDs from the currently loaded style dynamically
+        // Collect navigable line layers from the currently loaded style.
+        // MapTiler hybrid uses CamelCase IDs with spaces (e.g. "Road", "Path", "Path minor"),
+        // not the snake_case "road_motorway" pattern documented in older versions.
+        // We match both casings to stay resilient to style updates, and restrict to
+        // LineLayer to skip label / symbol layers that share similar names.
         val roadLayerIds = style.layers
-            .filter { it.id.startsWith("road") }
+            .filterIsInstance<LineLayer>()
+            .filter { layer ->
+                val id = layer.id
+                id.startsWith("Road") || id.startsWith("road") ||
+                id.startsWith("Path") || id.startsWith("path")
+            }
             .map { it.id }
             .toTypedArray()
 

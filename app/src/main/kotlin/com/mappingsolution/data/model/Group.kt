@@ -9,6 +9,8 @@ data class Group(
     val iconKey: String,
     val color: String,
     val isVisible: Boolean = true,
+    val isImported: Boolean = false,
+    val importComplete: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

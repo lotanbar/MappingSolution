@@ -1,17 +1,23 @@
 package com.mappingsolution.ui.library
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mappingsolution.data.fs.ExportRepository
 import com.mappingsolution.data.fs.GroupFileRepository
+import com.mappingsolution.data.fs.ImportRepository
+import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -36,6 +42,8 @@ class LibraryViewModel @Inject constructor(
     private val groupRepository: GroupFileRepository,
     private val poiRepository: PoiFileRepository,
     private val routeRepository: RouteFileRepository,
+    private val importRepository: ImportRepository,
+    private val exportRepository: ExportRepository,
 ) : ViewModel() {
 
     // ── Raw data ──────────────────────────────────────────────────────────
@@ -175,8 +183,13 @@ class LibraryViewModel @Inject constructor(
     fun deleteSelectedGroupsWithItems() {
         val ids = (_selectionMode.value as? LibrarySelectionMode.GroupSelection)?.selectedIds ?: return
         viewModelScope.launch {
-            poiRepository.deleteByIds(_allPois.value.filter { it.groupId in ids }.map { it.id })
+            _isBusy.value = true
+            val poisToDelete = _allPois.value.filter { it.groupId in ids }.map { it.id }
+            poiRepository.deleteByIds(poisToDelete) { done, total ->
+                reportProgress("Deleting…", done, total)
+            }
             _allGroups.value.filter { it.id in ids }.forEach { groupRepository.delete(it) }
+            clearProgress()
             clearSelection()
         }
     }
@@ -185,8 +198,11 @@ class LibraryViewModel @Inject constructor(
     fun orphanSelectedGroups() {
         val ids = (_selectionMode.value as? LibrarySelectionMode.GroupSelection)?.selectedIds ?: return
         viewModelScope.launch {
+            _isBusy.value = true
+            reportProgress("Orphaning…", 0, 0)
             poiRepository.orphan(_allPois.value.filter { it.groupId in ids }.map { it.id })
             _allGroups.value.filter { it.id in ids }.forEach { groupRepository.delete(it) }
+            clearProgress()
             clearSelection()
         }
     }
@@ -220,6 +236,70 @@ class LibraryViewModel @Inject constructor(
             val orphans = _allPois.value.filter { it.id in ids && it.groupId == null }.map { it.id }
             if (orphans.isNotEmpty()) poiRepository.moveToGroup(orphans, groupId)
             clearSelection()
+        }
+    }
+
+    // ── Import ────────────────────────────────────────────────────────────
+
+    private val _isBusy = MutableStateFlow(false)
+    val isImporting: StateFlow<Boolean> = _isBusy.asStateFlow()
+
+    private val _importingFolderName = MutableStateFlow<String?>(null)
+    val importingFolderName: StateFlow<String?> = _importingFolderName.asStateFlow()
+
+    private val _importProgressText = MutableStateFlow("")
+    val importProgressText: StateFlow<String> = _importProgressText.asStateFlow()
+
+    private val _importProgressFraction = MutableStateFlow(0f)
+    val importProgressFraction: StateFlow<Float> = _importProgressFraction.asStateFlow()
+
+    private fun reportProgress(phase: String, done: Int, total: Int) {
+        _importProgressText.value = if (total > 0) "$phase $done / $total" else phase
+        _importProgressFraction.value = if (total > 0) done.toFloat() / total else 0f
+    }
+
+    private fun clearProgress() {
+        _importProgressText.value = ""
+        _importProgressFraction.value = 0f
+        _importingFolderName.value = null
+        _isBusy.value = false
+    }
+
+    private val _importResult = MutableStateFlow<ImportResult?>(null)
+    val importResult: StateFlow<ImportResult?> = _importResult.asStateFlow()
+
+    fun importFromFolder(path: String) {
+        viewModelScope.launch {
+            _isBusy.value = true
+            _importingFolderName.value = java.io.File(path).name
+            reportProgress("Starting…", 0, 0)
+            _importResult.value = importRepository.importFolder(path) { phase, done, total ->
+                reportProgress(phase, done, total)
+            }
+            clearProgress()
+        }
+    }
+
+    fun dismissImportResult() { _importResult.value = null }
+
+    // ── Export ────────────────────────────────────────────────────────────
+
+    private val _exportUri = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    val exportUri = _exportUri.asSharedFlow()
+
+    fun exportSelectedGroups() {
+        val ids = (_selectionMode.value as? LibrarySelectionMode.GroupSelection)?.selectedIds ?: return
+        viewModelScope.launch {
+            val uri = exportRepository.exportGroups(ids) ?: return@launch
+            _exportUri.tryEmit(uri)
+        }
+    }
+
+    fun exportSelectedRows() {
+        val ids = (_selectionMode.value as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return
+        viewModelScope.launch {
+            val uri = exportRepository.exportRows(ids) ?: return@launch
+            _exportUri.tryEmit(uri)
         }
     }
 }

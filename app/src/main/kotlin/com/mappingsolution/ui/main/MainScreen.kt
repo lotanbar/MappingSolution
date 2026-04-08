@@ -2,8 +2,10 @@ package com.mappingsolution.ui.main
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -32,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,9 +81,30 @@ fun MainScreen(
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
     var locationServicesDisabled by remember { mutableStateOf(false) }
+    var locationLostDuringRecording by remember { mutableStateOf(false) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var showBatteryDialog by remember { mutableStateOf(false) }
     var flyToTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    // Monitor location services while a recording is in progress
+    DisposableEffect(recordingState) {
+        if (recordingState !is RecordingState.Active) return@DisposableEffect onDispose { }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (!isLocationEnabled(ctx)) locationLostDuringRecording = true
+            }
+        }
+        context.registerReceiver(receiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION))
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    // When recording stops while the map is not visible (user navigated away mid-recording),
+    // onMapDisposed skipped unregister to keep road snapping alive. Clean it up now.
+    LaunchedEffect(recordingState) {
+        if (recordingState is RecordingState.Idle) {
+            viewModel.mapHolder.unregisterIfNotVisible()
+        }
+    }
 
     // Tracks which incomplete route IDs the user has already dismissed this session
     val dismissedIncompleteIds = remember { mutableSetOf<String>() }
@@ -163,8 +187,12 @@ fun MainScreen(
     val recordingPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) checkNotifPermAndStart()
-        else locationError = "Location permission is required for route recording."
+        if (granted) {
+            if (!isLocationEnabled(context)) locationServicesDisabled = true
+            else checkNotifPermAndStart()
+        } else {
+            locationError = "Location permission is required for route recording."
+        }
     }
 
     recoveryRoute?.let { route ->
@@ -237,6 +265,23 @@ fun MainScreen(
         )
     }
 
+    if (locationLostDuringRecording) {
+        AlertDialog(
+            onDismissRequest = { locationLostDuringRecording = false },
+            title = { Text("Location Services Off") },
+            text = { Text("Location services were disabled while recording. The track may have gaps. Re-enable GPS to continue tracking accurately.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    locationLostDuringRecording = false
+                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { locationLostDuringRecording = false }) { Text("Dismiss") }
+            },
+        )
+    }
+
     if (locationError != null) {
         AlertDialog(
             onDismissRequest = { locationError = null },
@@ -260,11 +305,18 @@ fun MainScreen(
                     onRouteTapped = onRouteTapped,
                     onMapError = { mapError = it },
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
+                    liveRouteColor = (recordingState as? RecordingState.Active)?.color ?: "#FFFF5722",
                     flyToLocation = flyToTarget,
                     initialCamera = viewModel.initialCamera,
                     onCameraIdle = viewModel::saveCameraPosition,
                     onMapReady = { map -> viewModel.mapHolder.register(map) },
-                    onMapDisposed = { viewModel.mapHolder.unregister() },
+                    // Keep the map reference alive while recording so road snapping keeps
+                    // working even if the user navigates away from the main screen.
+                    onMapDisposed = {
+                        if (recordingState !is RecordingState.Active) {
+                            viewModel.mapHolder.unregister()
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (mapError != null) {
@@ -324,13 +376,17 @@ fun MainScreen(
                     val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION
                     ) == PackageManager.PERMISSION_GRANTED
-                    if (hasPerm) checkNotifPermAndStart()
-                    else recordingPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    when {
+                        !hasPerm -> recordingPermLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        !isLocationEnabled(context) -> locationServicesDisabled = true
+                        else -> checkNotifPermAndStart()
+                    }
                 },
                 recordingState = recordingState,
                 onPauseRecording = { recordingViewModel.pauseRecording() },
                 onResumeRecording = { recordingViewModel.resumeRecording() },
                 onStopRecording = { recordingViewModel.stopRecording() },
+                onColorChange = { recordingViewModel.setRecordingColor(it) },
                 onOpenLibrary = onOpenLibrary,
                 modifier = Modifier
                     .fillMaxWidth()

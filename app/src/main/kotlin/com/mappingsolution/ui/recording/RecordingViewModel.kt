@@ -48,4 +48,6 @@ class RecordingViewModel @Inject constructor(
     fun stopRecording() {
         getApplication<Application>().startService(RecordingService.stopIntent(getApplication()))
     }
+
+    fun setRecordingColor(color: String) = recordingRepository.updateLiveColor(color)
 }

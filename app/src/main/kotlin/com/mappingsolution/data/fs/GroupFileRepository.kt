@@ -54,6 +54,90 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
         _groups.value = (_groups.value + group).sortedBy { it.createdAt }
     }
 
+    /**
+     * For import: if an imported group with this name already exists, purges all its POIs and
+     * deletes it to guarantee a clean slate. Then creates a fresh group marked as incomplete.
+     * The caller must call [markImportComplete] after all data has been saved.
+     */
+    suspend fun purgeAndCreateForImport(
+        name: String,
+        poiRepository: PoiFileRepository,
+        onProgress: suspend (phase: String, done: Int, total: Int) -> Unit = { _, _, _ -> },
+    ): String = withContext(Dispatchers.IO) {
+        val trimmed = name.trim()
+        val existing = _groups.value.find { it.name.trim().equals(trimmed, ignoreCase = true) && it.isImported }
+        if (existing != null) {
+            val poiIds = poiRepository.getIdsByGroup(existing.id)
+            poiRepository.deleteByIds(poiIds) { done, total ->
+                onProgress("Removing previous import…", done, total)
+            }
+            storageManager.getGroupFile(existing.name).delete()
+            _groups.value = _groups.value.filter { it.id != existing.id }
+        }
+
+        val usedIcons = _groups.value.map { it.iconKey }.toSet()
+        val usedColors = _groups.value.map { it.color }.toSet()
+
+        val candidateIcons = listOf(
+            "flag", "tour", "explore", "map", "navigation", "push_pin",
+            "place", "near_me", "gps_fixed", "travel_explore", "satellite",
+            "location_city", "park", "terrain", "forest", "landscape",
+        )
+        val candidateColors = listOf(
+            "#FF4CAF50", "#FFFF9800", "#FF9C27B0", "#FF00BCD4",
+            "#FF607D8B", "#FFE91E63", "#FF3F51B5", "#FFFF5722",
+            "#FF009688", "#FF795548", "#FF8BC34A", "#FFFFC107",
+            "#FFCDDC39", "#FF00E5FF", "#FFFF4081", "#FF69F0AE",
+        )
+
+        val iconKey = candidateIcons.firstOrNull { it !in usedIcons } ?: "place"
+        val color = candidateColors.firstOrNull { it !in usedColors } ?: "#FF4CAF50"
+
+        val group = Group(name = trimmed, iconKey = iconKey, color = color, isImported = true, importComplete = false)
+        insertRaw(group)
+        group.id
+    }
+
+    suspend fun markImportComplete(groupId: String) = withContext(Dispatchers.IO) {
+        val group = _groups.value.find { it.id == groupId } ?: return@withContext
+        val updated = group.copy(importComplete = true, updatedAt = System.currentTimeMillis())
+        writeGroup(updated)
+        _groups.value = _groups.value.map { if (it.id == groupId) updated else it }
+    }
+
+    /**
+     * @deprecated Use [purgeAndCreateForImport] instead.
+     * For import: returns the ID of an existing group whose name matches (case-insensitive),
+     * or creates a new one with a free icon/color combination.
+     */
+    suspend fun findOrCreateForImport(name: String): String = withContext(Dispatchers.IO) {
+        val trimmed = name.trim()
+        _groups.value.find { it.name.trim().equals(trimmed, ignoreCase = true) }
+            ?.let { return@withContext it.id }
+
+        val usedIcons = _groups.value.map { it.iconKey }.toSet()
+        val usedColors = _groups.value.map { it.color }.toSet()
+
+        val candidateIcons = listOf(
+            "flag", "tour", "explore", "map", "navigation", "push_pin",
+            "place", "near_me", "gps_fixed", "travel_explore", "satellite",
+            "location_city", "park", "terrain", "forest", "landscape",
+        )
+        val candidateColors = listOf(
+            "#FF4CAF50", "#FFFF9800", "#FF9C27B0", "#FF00BCD4",
+            "#FF607D8B", "#FFE91E63", "#FF3F51B5", "#FFFF5722",
+            "#FF009688", "#FF795548", "#FF8BC34A", "#FFFFC107",
+            "#FFCDDC39", "#FF00E5FF", "#FFFF4081", "#FF69F0AE",
+        )
+
+        val iconKey = candidateIcons.firstOrNull { it !in usedIcons } ?: "place"
+        val color = candidateColors.firstOrNull { it !in usedColors } ?: "#FF4CAF50"
+
+        val group = Group(name = trimmed, iconKey = iconKey, color = color, isImported = true)
+        insertRaw(group)
+        group.id
+    }
+
     fun observeAll(): Flow<List<Group>> = _groups
 
     suspend fun getById(id: String): Group? = _groups.value.find { it.id == id }
@@ -104,6 +188,8 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             put("iconKey", group.iconKey)
             put("color", group.color)
             put("isVisible", group.isVisible)
+            put("isImported", group.isImported)
+            put("importComplete", group.importComplete)
             put("createdAt", group.createdAt)
             put("updatedAt", group.updatedAt)
         }
@@ -119,6 +205,8 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             iconKey = json.getString("iconKey"),
             color = json.getString("color"),
             isVisible = json.optBoolean("isVisible", true),
+            isImported = json.optBoolean("isImported", false),
+            importComplete = json.optBoolean("importComplete", true),
             createdAt = json.getLong("createdAt"),
             updatedAt = json.getLong("updatedAt"),
         )

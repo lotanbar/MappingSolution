@@ -26,17 +26,19 @@ class StorageManager @Inject constructor() {
     fun poiFolderName(name: String, id: String): String = "${sanitizeName(name)}_${id.take(8)}"
     fun getPoiDir(name: String, id: String): File = File(getPoisDir(), poiFolderName(name, id)).also { it.mkdirs() }
     fun getPoiFile(name: String, id: String): File = File(getPoiDir(name, id), "poi.json")
-    /** Media files live flat inside the POI folder (no media/ subfolder). */
-    fun getPoiMediaDir(name: String, id: String): File = getPoiDir(name, id)
+    /** Media files live flat inside the POI folder (no media/ subfolder). Does NOT create the dir. */
+    fun getPoiMediaDir(name: String, id: String): File = File(getPoisDir(), poiFolderName(name, id))
     fun deletePoiFolder(name: String, id: String): Boolean =
         File(getPoisDir(), poiFolderName(name, id)).deleteRecursively()
     fun renamePoiFolder(oldName: String, newName: String, id: String) {
         val oldDir = File(getPoisDir(), poiFolderName(oldName, id))
         val newDir = File(getPoisDir(), poiFolderName(newName, id))
         if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
-            oldDir.renameTo(newDir)
-            // Remove stale old dir if rename didn't fully move it (seen on some Android versions)
-            if (oldDir.exists()) oldDir.deleteRecursively()
+            if (oldDir.renameTo(newDir)) {
+                // Rename succeeded; clean up any stale old dir left behind on some Android versions.
+                if (oldDir.exists()) oldDir.deleteRecursively()
+            }
+            // If rename failed, leave oldDir intact — deleting it would permanently lose the data.
         }
     }
 
@@ -52,13 +54,16 @@ class StorageManager @Inject constructor() {
         val oldDir = File(getRecordingsDir(), recordingFolderName(oldName, id))
         val newDir = File(getRecordingsDir(), recordingFolderName(newName, id))
         if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
-            oldDir.renameTo(newDir)
-            // Remove stale old dir if rename didn't fully move it (seen on some Android versions)
-            if (oldDir.exists()) oldDir.deleteRecursively()
+            if (oldDir.renameTo(newDir)) {
+                // Rename succeeded; clean up any stale old dir left behind on some Android versions.
+                if (oldDir.exists()) oldDir.deleteRecursively()
+            }
+            // If rename failed, leave oldDir intact — deleting it would permanently lose the data.
         }
     }
 
     fun getTempDir(): File = File(rootDir, "temp").also { it.mkdirs() }
+    fun getExportsDir(): File = File(rootDir, "exports").also { it.mkdirs() }
 
     fun resolvePath(relativePath: String): File = File(rootDir, relativePath)
     fun toRelativePath(file: File): String =

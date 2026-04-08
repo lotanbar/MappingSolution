@@ -42,6 +42,8 @@ class PoiFileRepository @Inject constructor(private val storageManager: StorageM
 
     suspend fun countByGroup(groupId: String): Int = _pois.value.count { it.groupId == groupId }
 
+    suspend fun getIdsByGroup(groupId: String): List<String> = _pois.value.filter { it.groupId == groupId }.map { it.id }
+
     suspend fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
     suspend fun insert(poi: Poi): String = withContext(Dispatchers.IO) {
@@ -49,6 +51,30 @@ class PoiFileRepository @Inject constructor(private val storageManager: StorageM
         writePoi(newPoi)
         _pois.value = (_pois.value + newPoi).sortedBy { it.createdAt }
         newPoi.id
+    }
+
+    /** Writes all POIs to disk then does a single StateFlow update. Use for bulk imports.
+     *  Optional [transform] is applied to each POI just before writing, avoiding a separate prep pass. */
+    suspend fun insertBatch(
+        pois: List<Poi>,
+        transform: (Poi) -> Poi = { it },
+        onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<String> = withContext(Dispatchers.IO) {
+        val total = pois.size
+        val newPois = ArrayList<Poi>(total)
+        var lastEmit = 0L
+        for ((i, raw) in pois.withIndex()) {
+            val poi = transform(raw.copy(id = if (raw.id.isEmpty()) UUID.randomUUID().toString() else raw.id))
+            writePoi(poi)
+            newPois.add(poi)
+            val now = System.currentTimeMillis()
+            if (now - lastEmit >= 32 || i == total - 1) {
+                onProgress(i + 1, total)
+                lastEmit = now
+            }
+        }
+        _pois.value = (_pois.value + newPois).sortedBy { it.createdAt }
+        newPois.map { it.id }
     }
 
     suspend fun update(poi: Poi) = withContext(Dispatchers.IO) {
@@ -66,9 +92,21 @@ class PoiFileRepository @Inject constructor(private val storageManager: StorageM
         _pois.value = _pois.value.filter { it.id != poi.id }
     }
 
-    suspend fun deleteByIds(ids: List<String>) = withContext(Dispatchers.IO) {
+    suspend fun deleteByIds(
+        ids: List<String>,
+        onProgress: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) = withContext(Dispatchers.IO) {
         val toDelete = _pois.value.filter { it.id in ids }
-        toDelete.forEach { storageManager.deletePoiFolder(it.name, it.id) }
+        val total = toDelete.size
+        var lastEmit = 0L
+        for ((i, poi) in toDelete.withIndex()) {
+            storageManager.deletePoiFolder(poi.name, poi.id)
+            val now = System.currentTimeMillis()
+            if (now - lastEmit >= 32 || i == total - 1) {
+                onProgress(i + 1, total)
+                lastEmit = now
+            }
+        }
         _pois.value = _pois.value.filter { it.id !in ids }
     }
 

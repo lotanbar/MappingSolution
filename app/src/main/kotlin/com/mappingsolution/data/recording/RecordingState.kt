@@ -13,6 +13,7 @@ sealed class RecordingState {
         val pausedSinceMs: Long? = null,
         val points: List<RecordingPoint> = emptyList(),
         val distanceMeters: Double = 0.0,
+        val color: String = "#FFFF5722",
     ) : RecordingState() {
         val isPaused: Boolean get() = pausedSinceMs != null
 

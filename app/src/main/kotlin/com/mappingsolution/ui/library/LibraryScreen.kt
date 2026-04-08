@@ -1,7 +1,18 @@
 package com.mappingsolution.ui.library
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -14,28 +25,38 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.Input
+import androidx.compose.material.icons.filled.Output
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,9 +65,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,11 +81,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.ui.common.IconCatalog
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -96,6 +116,88 @@ fun LibraryScreen(
     val canOrphan by viewModel.canOrphanSelection.collectAsState()
     val canUnorphan by viewModel.canUnorphanSelection.collectAsState()
     val allGroups by viewModel.allGroupsUnfiltered.collectAsState()
+    val isImporting by viewModel.isImporting.collectAsState()
+    val importingFolderName by viewModel.importingFolderName.collectAsState()
+    val importProgressText by viewModel.importProgressText.collectAsState()
+    val importProgressFraction by viewModel.importProgressFraction.collectAsState()
+    val importResult by viewModel.importResult.collectAsState()
+
+    val context = LocalContext.current
+
+    // ── Permission state (re-evaluated on every resume) ───────────────────
+    var hasAllFilesPermission by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+        )
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasAllFilesPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                    Environment.isExternalStorageManager()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    var showAllFilesDialog by remember { mutableStateOf(false) }
+    var showFolderPicker by remember { mutableStateOf(false) }
+
+    val allFilesSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* ON_RESUME above will update hasAllFilesPermission */ }
+
+    if (showAllFilesDialog) {
+        AlertDialog(
+            onDismissRequest = { showAllFilesDialog = false },
+            title = { Text("Allow full file access?") },
+            text = {
+                Text(
+                    "Mapping Solution needs \"All files access\" to browse and import " +
+                    "your GPX folder. Tap Open Settings, enable the toggle, then come back."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAllFilesDialog = false
+                    allFilesSettingsLauncher.launch(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAllFilesDialog = false }) { Text("Not now") }
+            }
+        )
+    }
+
+    if (showFolderPicker) {
+        FolderPickerDialog(
+            initialPath = "/storage/emulated/0",
+            onFolderSelected = { path ->
+                viewModel.importFromFolder(path)
+                showFolderPicker = false
+            },
+            onDismiss = { showFolderPicker = false }
+        )
+    }
+
+    // Observe export URI and fire the share chooser
+    LaunchedEffect(Unit) {
+        viewModel.exportUri.collect { uri: Uri ->
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/gpx+xml"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Export GPX"))
+        }
+    }
 
     // ── Local dialog state ────────────────────────────────────────────────
     var showDeleteGroupsDialog by remember { mutableStateOf(false) }
@@ -109,6 +211,10 @@ fun LibraryScreen(
     }
 
     // ── Dialogs ───────────────────────────────────────────────────────────
+
+    importResult?.let { result ->
+        ImportResultDialog(result = result, onDismiss = { viewModel.dismissImportResult() })
+    }
 
     if (showDeleteGroupsDialog) {
         val count = (selectionMode as? LibrarySelectionMode.GroupSelection)?.selectedIds?.size ?: 0
@@ -156,39 +262,125 @@ fun LibraryScreen(
         topBar = {
             when (val mode = selectionMode) {
                 is LibrarySelectionMode.None -> {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        tonalElevation = 3.dp,
-                        shadowElevation = 4.dp,
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.background)
+                            .statusBarsPadding(),
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            IconButton(onClick = onNavigateBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = viewModel::onSearchQuery,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
+                                    decorationBox = { innerTextField ->
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Search,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                            Box {
+                                                if (searchQuery.isEmpty()) {
+                                                    Text(
+                                                        "Search groups, POIs, routes…",
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f),
+                                                    )
+                                                }
+                                                innerTextField()
+                                            }
+                                        }
+                                    },
+                                )
                             }
-                            SearchBar(
-                                inputField = {
-                                    SearchBarDefaults.InputField(
-                                        query = searchQuery,
-                                        onQueryChange = viewModel::onSearchQuery,
-                                        onSearch = {},
-                                        expanded = false,
-                                        onExpandedChange = {},
-                                        placeholder = { Text("Search groups, POIs, routes…") },
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .clickable { onCreateGroup() },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Default.CreateNewFolder,
+                                    contentDescription = "Create group",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .clickable(enabled = !isImporting) {
+                                        if (hasAllFilesPermission) showFolderPicker = true
+                                        else showAllFilesDialog = true
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isImporting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     )
-                                },
-                                expanded = false,
-                                onExpandedChange = {},
-                                modifier = Modifier.weight(1f),
-                                content = {},
+                                } else {
+                                    Icon(
+                                        Icons.Default.Input,
+                                        contentDescription = "Import",
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                }
+                            }
+                        }
+                        if (isImporting && importProgressText.isNotEmpty()) {
+                            Text(
+                                text = importProgressText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
                             )
-                            IconButton(onClick = onCreateGroup) {
-                                Icon(Icons.Default.Add, contentDescription = "Create group")
+                            if (importProgressFraction > 0f) {
+                                LinearProgressIndicator(
+                                    progress = { importProgressFraction },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .padding(bottom = 4.dp),
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .padding(bottom = 4.dp),
+                                )
                             }
                         }
                     }
@@ -202,6 +394,10 @@ fun LibraryScreen(
                             }
                         },
                         actions = {
+                            // Export selected groups
+                            IconButton(onClick = { viewModel.exportSelectedGroups() }) {
+                                Icon(Icons.Default.Output, contentDescription = "Export selected")
+                            }
                             // Orphan action: delete groups, keep POIs
                             IconButton(onClick = { viewModel.orphanSelectedGroups() }) {
                                 Icon(Icons.Default.FolderOff, contentDescription = "Orphan items")
@@ -226,6 +422,10 @@ fun LibraryScreen(
                             }
                         },
                         actions = {
+                            // Export selected rows (POIs and routes)
+                            IconButton(onClick = { viewModel.exportSelectedRows() }) {
+                                Icon(Icons.Default.Output, contentDescription = "Export selected")
+                            }
                             // Orphan: remove group from selected grouped POIs
                             if (canOrphan) {
                                 IconButton(onClick = { viewModel.orphanSelectedRows() }) {
@@ -258,24 +458,33 @@ fun LibraryScreen(
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
-            // ── Groups ────────────────────────────────────────────────────
-            if (filteredGroups.isNotEmpty()) {
-                item { SectionHeader("Groups") }
+            // ── Groups & POIs ─────────────────────────────────────────────
+            if (filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()) {
+                item { SectionHeader("Groups & POIs") }
 
                 filteredGroups.forEach { group ->
-                    val isExpanded = group.id in expandedGroups
+                    val isCollapsible = !group.isImported
+                    val isExpanded = isCollapsible && group.id in expandedGroups
                     val isGroupSelected = (selectionMode as? LibrarySelectionMode.GroupSelection)
                         ?.selectedIds?.contains(group.id) == true
+                    val poiCount = poisByGroup[group.id]?.size ?: 0
 
                     item(key = "group-${group.id}") {
+                        val isGroupImporting = isImporting &&
+                            importingFolderName?.equals(group.name, ignoreCase = true) == true
                         GroupHeaderRow(
                             group = group,
+                            poiCount = poiCount,
+                            isCollapsible = isCollapsible,
                             isExpanded = isExpanded,
                             isSelected = isGroupSelected,
+                            isImporting = isGroupImporting,
                             selectionMode = selectionMode,
                             onTap = {
                                 when (selectionMode) {
-                                    is LibrarySelectionMode.None -> viewModel.toggleCollapse(group.id)
+                                    is LibrarySelectionMode.None ->
+                                        if (isCollapsible) viewModel.toggleCollapse(group.id)
+                                        else onEditGroup(group.id)
                                     is LibrarySelectionMode.GroupSelection -> viewModel.toggleGroupSelection(group.id)
                                     is LibrarySelectionMode.RowSelection -> Unit
                                 }
@@ -289,6 +498,31 @@ fun LibraryScreen(
                             onToggleVisibility = { viewModel.toggleGroupVisibility(group) },
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+
+                    if (group.isImported && !group.importComplete && !isImporting) {
+                        item(key = "group-incomplete-${group.id}") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .drawBehind { drawRect(android.graphics.Color.parseColor("#33FF9800").let { c -> Color(c) }) }
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                            ) {
+                                Icon(
+                                    Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF9800),
+                                    modifier = Modifier.padding(end = 8.dp),
+                                )
+                                Text(
+                                    text = "Import incomplete — re-import to fix",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(0xFFFF9800),
+                                )
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
                     }
 
                     if (isExpanded) {
@@ -323,7 +557,6 @@ fun LibraryScreen(
 
             // ── Orphaned POIs ─────────────────────────────────────────────
             if (filteredOrphanedPois.isNotEmpty()) {
-                item { SectionHeader("Unassigned POIs") }
                 items(filteredOrphanedPois, key = { "orphan-${it.id}" }) { poi ->
                     val isSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
                         ?.selectedIds?.contains(poi.id) == true
@@ -435,8 +668,11 @@ private fun SectionHeader(title: String) {
 @Composable
 private fun GroupHeaderRow(
     group: Group,
+    poiCount: Int,
+    isCollapsible: Boolean,
     isExpanded: Boolean,
     isSelected: Boolean,
+    isImporting: Boolean,
     selectionMode: LibrarySelectionMode,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
@@ -451,11 +687,17 @@ private fun GroupHeaderRow(
     else
         MaterialTheme.colorScheme.surface
 
+    val countText = when {
+        poiCount == 0 -> group.description
+        group.description.isNullOrEmpty() -> "$poiCount POI${if (poiCount != 1) "s" else ""}"
+        else -> "${group.description} · $poiCount POI${if (poiCount != 1) "s" else ""}"
+    }
+
     ListItem(
         colors = ListItemDefaults.colors(containerColor = containerColor),
         modifier = Modifier.combinedClickable(onClick = onTap, onLongClick = onLongPress),
         headlineContent = { Text(group.name, style = MaterialTheme.typography.bodyLarge) },
-        supportingContent = group.description?.let {
+        supportingContent = countText?.let {
             { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 1) }
         },
         leadingContent = {
@@ -489,9 +731,17 @@ private fun GroupHeaderRow(
                 }
             }
         },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selectionMode is LibrarySelectionMode.None) {
+        trailingContent = if (selectionMode is LibrarySelectionMode.None) {
+            {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isImporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .padding(end = 4.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
                     IconButton(onClick = onToggleVisibility) {
                         Icon(
                             imageVector = if (group.isVisible) Icons.Default.Visibility
@@ -501,15 +751,17 @@ private fun GroupHeaderRow(
                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                         )
                     }
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        modifier = Modifier.padding(end = 8.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (isCollapsible) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            modifier = Modifier.padding(end = 8.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-        },
+        } else null,
     )
 }
 
@@ -741,6 +993,72 @@ private fun IncompleteRouteDialog(
         confirmButton = { TextButton(onClick = onContinue) { Text("Continue") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Dismiss") } },
     )
+}
+
+// ── Import result dialog ───────────────────────────────────────────────────────
+
+@Composable
+private fun ImportResultDialog(result: ImportResult, onDismiss: () -> Unit) {
+    if (result.isValidationFailure) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Import cancelled — validation failed") },
+            text = {
+                Column {
+                    Text(
+                        "${result.validationErrors.size} problem${if (result.validationErrors.size != 1) "s" else ""} found. No data was imported.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        result.validationErrors.forEach { error ->
+                            Text(
+                                "• $error",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Import complete") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (result.poisImported > 0)
+                        Text("${result.poisImported} POI${if (result.poisImported != 1) "s" else ""} imported")
+                    if (result.routesImported > 0)
+                        Text("${result.routesImported} route${if (result.routesImported != 1) "s" else ""} imported")
+                    if (result.poisImported == 0 && result.routesImported == 0)
+                        Text("No items found to import.")
+                    if (result.filesSkipped > 0)
+                        Text("${result.filesSkipped} file${if (result.filesSkipped != 1) "s" else ""} skipped")
+                    if (result.errors.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 200.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            result.errors.forEach {
+                                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        )
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
