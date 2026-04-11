@@ -22,7 +22,14 @@ class GooglePlacesRepository @Inject constructor(
     private val _pois = MutableStateFlow<List<Poi>>(emptyList())
     val pois: StateFlow<List<Poi>> = _pois.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
+
+    /** Fetches photo URLs for a specific Google Place (up to 3). Empty list on any error. */
+    suspend fun fetchPhotoUrls(placeId: String): List<String> =
+        withContext(Dispatchers.IO) { api.fetchPlacePhotoUrls(placeId) }
 
     /**
      * Fetches Google Places POIs for the given viewport bounds.
@@ -34,6 +41,8 @@ class GooglePlacesRepository @Inject constructor(
         east: Double,
         west: Double,
     ) = withContext(Dispatchers.IO) {
+        try {
+        _isLoading.value = true
         val centerLat = (north + south) / 2.0
         val centerLng = (east + west) / 2.0
         val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
@@ -79,6 +88,9 @@ class GooglePlacesRepository @Inject constructor(
 
         cache.store(cacheKey, combined)
         _pois.value = combined.filter { it.lat in south..north && it.lng in west..east }
+        } finally {
+            _isLoading.value = false
+        }
     }
 
     /** Clears in-memory POIs (e.g. when zoomed below threshold). */

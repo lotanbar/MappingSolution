@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -68,6 +69,12 @@ class MainViewModel @Inject constructor(
 
     /** Reads last known viewport — always fresh (in-memory first, then disk). */
     val initialCamera: ViewportPreference.SavedCamera? get() = mapHolder.loadCamera()
+
+    /** True while either POI source is actively fetching from network. */
+    val isPoisLoading: StateFlow<Boolean> = combine(
+        googlePlacesRepository.isLoading,
+        osmPoiRepository.isLoading,
+    ) { g, o -> g || o }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private var googleRefreshJob: Job? = null
     private var osmRefreshJob: Job? = null

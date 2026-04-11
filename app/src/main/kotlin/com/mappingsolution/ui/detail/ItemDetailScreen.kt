@@ -169,6 +169,7 @@ private fun PoiDetailContent(
                         mediaItems = mediaItems,
                         onItemClick = { index -> onOpenMediaPreview(poi.id, index, item.mediaPaths) },
                         onRemoveItem = { index -> onRemoveMedia(index) },
+                        allowRemove = !isReadOnly,
                     )
                 }
             }

@@ -15,6 +15,8 @@ import javax.inject.Singleton
 class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient) {
 
     private val baseUrl = "https://places.googleapis.com/v1/places:searchNearby"
+    private val detailBaseUrl = "https://places.googleapis.com/v1/places"
+    private val v1BaseUrl = "https://places.googleapis.com/v1"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     /**
@@ -82,6 +84,43 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
             }
         }.getOrElse { e ->
             Log.e("PlacesApiService", "fetchNearby failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetches up to 3 photo URLs for a specific place by ID.
+     * Photo URL format: https://places.googleapis.com/v1/{photoName}/media?maxWidthPx=800&key={key}
+     */
+    suspend fun fetchPlacePhotoUrls(placeId: String): List<String> {
+        val apiKey = BuildConfig.GOOGLE_PLACES_API_KEY
+        if (apiKey.isBlank()) return emptyList()
+
+        val request = Request.Builder()
+            .url("$detailBaseUrl/$placeId")
+            .addHeader("X-Goog-Api-Key", apiKey)
+            .addHeader("X-Goog-FieldMask", "photos")
+            .get()
+            .build()
+
+        return runCatching {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e("PlacesApiService", "fetchPlacePhotoUrls HTTP ${response.code}")
+                    return@runCatching emptyList()
+                }
+                val json = JSONObject(response.body!!.string())
+                val photos = json.optJSONArray("photos") ?: return@runCatching emptyList()
+                (0 until minOf(photos.length(), 3)).mapNotNull { i ->
+                    runCatching {
+                        val photoName = photos.getJSONObject(i).getString("name")
+                        // photoName = "places/{id}/photos/{ref}" — base is v1, not v1/places
+                        "$v1BaseUrl/$photoName/media?maxWidthPx=800&key=$apiKey"
+                    }.getOrNull()
+                }
+            }
+        }.getOrElse { e ->
+            Log.e("PlacesApiService", "fetchPlacePhotoUrls failed", e)
             emptyList()
         }
     }

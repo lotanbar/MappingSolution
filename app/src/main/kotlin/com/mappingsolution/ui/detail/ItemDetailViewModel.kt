@@ -93,9 +93,12 @@ class ItemDetailViewModel @Inject constructor(
             return
         }
         val group = poi.groupId?.let { groupRepository.getById(it) }
+        val photoUrls = runCatching {
+            googlePlacesRepository.fetchPhotoUrls(id)
+        }.getOrElse { emptyList() }
         _state.update {
             ItemDetailState(
-                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = emptyList(), isReadOnly = true),
+                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = photoUrls, isReadOnly = true),
                 isLoading = false,
             )
         }

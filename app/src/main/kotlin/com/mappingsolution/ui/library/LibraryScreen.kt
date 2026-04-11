@@ -462,9 +462,11 @@ fun LibraryScreen(
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
-            // ── Live POI layers (Google Places + OSM) ─────────────────────
-            if (googlePlacesGroup != null || osmPoiGroup != null) {
-                item { SectionHeader("Nearby POI Layers") }
+            // ── Groups & POIs (includes live POI layers at top) ───────────
+            if (googlePlacesGroup != null || osmPoiGroup != null ||
+                filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()
+            ) {
+                item { SectionHeader("Groups & POIs") }
                 googlePlacesGroup?.let { group ->
                     item(key = "places-group") {
                         PlacesGroupRow(
@@ -485,11 +487,6 @@ fun LibraryScreen(
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     }
                 }
-            }
-
-            // ── Groups & POIs ─────────────────────────────────────────────
-            if (filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()) {
-                item { SectionHeader("Groups & POIs") }
 
                 filteredGroups.forEach { group ->
                     val isCollapsible = !group.isImported
@@ -771,6 +768,14 @@ private fun GroupHeaderRow(
                             strokeWidth = 2.dp,
                         )
                     }
+                    if (isCollapsible) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            modifier = Modifier.padding(start = 8.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = onToggleVisibility) {
                         Icon(
                             imageVector = if (group.isVisible) Icons.Default.Visibility
@@ -778,14 +783,6 @@ private fun GroupHeaderRow(
                             contentDescription = if (group.isVisible) "Hide" else "Show",
                             tint = if (group.isVisible) MaterialTheme.colorScheme.primary
                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        )
-                    }
-                    if (isCollapsible) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
-                            modifier = Modifier.padding(end = 8.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

@@ -48,7 +48,8 @@ fun PoiMediaGallery(
     mediaItems: List<MediaItem>,
     onItemClick: (Int) -> Unit,
     onRemoveItem: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    allowRemove: Boolean = true,
 ) {
     if (mediaItems.isEmpty()) return
 
@@ -84,7 +85,7 @@ fun PoiMediaGallery(
                 } else {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(File(item.path))
+                            .data(if (item.path.startsWith("http")) item.path else File(item.path))
                             .decoderFactory(VideoFrameDecoder.Factory())
                             .crossfade(true)
                             .build(),
@@ -135,6 +136,7 @@ fun PoiMediaGallery(
                 }
 
                 // Remove button
+                if (allowRemove) {
                 IconButton(
                     onClick = {
                         val currentTime = System.currentTimeMillis()
@@ -148,6 +150,7 @@ fun PoiMediaGallery(
                     modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                 ) {
                     Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                }
                 }
             }
         }

@@ -4,10 +4,10 @@ const val GOOGLE_PLACES_GROUP_ID = "google-places-group"
 const val OSM_POI_GROUP_ID = "osm-poi-group"
 
 // Zoom threshold — applies to BOTH sources
-const val NEARBY_POI_MIN_ZOOM = 13.0
+const val NEARBY_POI_MIN_ZOOM = 8.0
 
 const val GOOGLE_PLACES_FETCH_DEBOUNCE_MS = 800L
-const val GOOGLE_PLACES_MAX_RESULTS = 30     // target per viewport; fetched as 15+15 or adjusted for cache
+const val GOOGLE_PLACES_MAX_RESULTS = 40     // target per viewport; fetched as 20+20 or adjusted for cache
 const val GOOGLE_PLACES_MAX_PER_CALL = 20    // hard API limit per single call
 const val GOOGLE_PLACES_CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000   // 7 days
 const val GOOGLE_PLACES_FIELD_MASK = "places.id,places.displayName,places.location"

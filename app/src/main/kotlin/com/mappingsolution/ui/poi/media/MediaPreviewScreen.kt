@@ -57,7 +57,7 @@ fun MediaPreviewScreen(
 fun ZoomableImage(path: String) {
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
-            model = File(path),
+            model = if (path.startsWith("http")) path else File(path),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit

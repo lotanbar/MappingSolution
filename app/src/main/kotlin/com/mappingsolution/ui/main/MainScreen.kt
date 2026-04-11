@@ -17,6 +17,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -26,11 +27,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,6 +84,7 @@ fun MainScreen(
     val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
     val googlePlaces by viewModel.googlePlacesRepository.pois.collectAsState()
     val osmPois by viewModel.osmPoiRepository.pois.collectAsState()
+    val isPoisLoading by viewModel.isPoisLoading.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
@@ -345,6 +349,31 @@ fun MainScreen(
                                 color = androidx.compose.ui.graphics.Color.White,
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            )
+                        }
+                    }
+                }
+                if (isPoisLoading) {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shadowElevation = 4.dp,
+                        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            Text(
+                                "POIs loading…",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
                         }
                     }

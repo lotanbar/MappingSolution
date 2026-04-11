@@ -19,6 +19,9 @@ class OsmPoiRepository @Inject constructor(
     private val _pois = MutableStateFlow<List<Poi>>(emptyList())
     val pois: StateFlow<List<Poi>> = _pois.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
     /**
@@ -31,6 +34,8 @@ class OsmPoiRepository @Inject constructor(
         east: Double,
         west: Double,
     ) = withContext(Dispatchers.IO) {
+        try {
+        _isLoading.value = true
         val centerLat = (north + south) / 2.0
         val centerLng = (east + west) / 2.0
         val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
@@ -50,6 +55,9 @@ class OsmPoiRepository @Inject constructor(
 
         cache.store(cacheKey, fetched)
         _pois.value = fetched.filter { it.lat in south..north && it.lng in west..east }
+        } finally {
+            _isLoading.value = false
+        }
     }
 
     /** Clears in-memory POIs (e.g. when zoomed below threshold). */
