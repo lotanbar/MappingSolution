@@ -29,6 +29,11 @@ android {
             "MAPTILER_API_KEY",
             "\"${localProperties.getProperty("MAPTILER_API_KEY", "")}\""
         )
+        buildConfigField(
+            "String",
+            "GOOGLE_PLACES_API_KEY",
+            "\"${localProperties.getProperty("GOOGLE_PLACES_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -85,6 +90,9 @@ dependencies {
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    // OkHttp
+    implementation(libs.okhttp)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

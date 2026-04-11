@@ -9,6 +9,8 @@ import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.places.GooglePlacesRepository
+import com.mappingsolution.data.places.OsmPoiRepository
 import com.mappingsolution.data.util.StorageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,7 @@ sealed interface DetailItem {
         val poi: Poi,
         val group: Group?,
         val mediaPaths: List<String>,
+        val isReadOnly: Boolean = false,
     ) : DetailItem
 
     data class RouteDetail(val route: Route) : DetailItem
@@ -39,6 +42,8 @@ class ItemDetailViewModel @Inject constructor(
     private val poiRepository: PoiFileRepository,
     private val routeRepository: RouteFileRepository,
     private val groupRepository: GroupFileRepository,
+    private val googlePlacesRepository: GooglePlacesRepository,
+    private val osmPoiRepository: OsmPoiRepository,
     private val storageManager: StorageManager,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -58,6 +63,8 @@ class ItemDetailViewModel @Inject constructor(
             when (type) {
                 "poi" -> loadPoi()
                 "route" -> loadRoute()
+                "google_place" -> loadGooglePlace()
+                "osm_poi" -> loadOsmPoi()
                 else -> _state.update { it.copy(isLoading = false) }
             }
         }
@@ -75,6 +82,34 @@ class ItemDetailViewModel @Inject constructor(
         _state.update {
             ItemDetailState(
                 item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = absolutePaths),
+                isLoading = false,
+            )
+        }
+    }
+
+    private suspend fun loadGooglePlace() {
+        val poi = googlePlacesRepository.getById(id) ?: run {
+            _state.update { it.copy(isLoading = false) }
+            return
+        }
+        val group = poi.groupId?.let { groupRepository.getById(it) }
+        _state.update {
+            ItemDetailState(
+                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = emptyList(), isReadOnly = true),
+                isLoading = false,
+            )
+        }
+    }
+
+    private suspend fun loadOsmPoi() {
+        val poi = osmPoiRepository.getById(id) ?: run {
+            _state.update { it.copy(isLoading = false) }
+            return
+        }
+        val group = poi.groupId?.let { groupRepository.getById(it) }
+        _state.update {
+            ItemDetailState(
+                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = emptyList(), isReadOnly = true),
                 isLoading = false,
             )
         }

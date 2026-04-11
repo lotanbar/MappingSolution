@@ -98,13 +98,18 @@ fun MapComponent(
     groups: List<Group> = emptyList(),
     routes: List<Route> = emptyList(),
     routePoints: Map<String, List<RoutePoint>> = emptyMap(),
+    googlePlaces: List<Poi> = emptyList(),
+    osmPois: List<Poi> = emptyList(),
     liveRoutePoints: List<RecordingPoint> = emptyList(),
     liveRouteColor: String = "#FFFF5722",
     flyToLocation: Pair<Double, Double>? = null,
     initialCamera: ViewportPreference.SavedCamera? = null,
     onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
+    onBoundsChanged: (north: Double, south: Double, east: Double, west: Double, lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onPoiTapped: (String) -> Unit = {},
     onRouteTapped: (String) -> Unit = {},
+    onGooglePlaceTapped: (String) -> Unit = {},
+    onOsmPoiTapped: (String) -> Unit = {},
     onMapReady: (MapLibreMap) -> Unit = {},
     onMapDisposed: () -> Unit = {},
     onMapError: (String) -> Unit = {},
@@ -116,7 +121,10 @@ fun MapComponent(
     val layoutDirection = LocalLayoutDirection.current
     val onPoiTappedRef = rememberUpdatedState(onPoiTapped)
     val onRouteTappedRef = rememberUpdatedState(onRouteTapped)
+    val onGooglePlaceTappedRef = rememberUpdatedState(onGooglePlaceTapped)
+    val onOsmPoiTappedRef = rememberUpdatedState(onOsmPoiTapped)
     val onCameraIdleRef = rememberUpdatedState(onCameraIdle)
+    val onBoundsChangedRef = rememberUpdatedState(onBoundsChanged)
 
     MapLibre.getInstance(context)
 
@@ -138,6 +146,16 @@ fun MapComponent(
         }
         bitmaps["default"] = createPoiPin("#2196F3", painters["place"]!!, density, layoutDirection)
         bitmaps
+    }
+
+    // Fixed bitmaps for the two new layers (blue Google, green OSM)
+    val placePainter = rememberVectorPainter(IconCatalog.iconVector("place"))
+    val terrainPainter = rememberVectorPainter(IconCatalog.iconVector("terrain"))
+    val googlePlacesBitmap = remember(placePainter) {
+        createPoiPin("#4285F4", placePainter, density, layoutDirection)
+    }
+    val osmPoiBitmap = remember(terrainPainter) {
+        createPoiPin("#4CAF50", terrainPainter, density, layoutDirection)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -173,6 +191,15 @@ fun MapComponent(
         groupBitmaps.forEach { (id, bitmap) ->
             style.addImage("pin-$id", bitmap)
         }
+    }
+
+    // Update fixed-color bitmaps for places layers
+    LaunchedEffect(styleReady.value, googlePlacesBitmap, osmPoiBitmap) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        style.addImage("pin-google-place", googlePlacesBitmap)
+        style.addImage("pin-osm-poi", osmPoiBitmap)
     }
 
     // Re-render POIs whenever data or style readiness changes
@@ -259,6 +286,36 @@ fun MapComponent(
         }
     }
 
+    LaunchedEffect(googlePlaces, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val source = style.getSource("google-places-source") as? GeoJsonSource ?: return@LaunchedEffect
+        val features = googlePlaces.map { poi ->
+            Feature.fromGeometry(
+                Point.fromLngLat(poi.lng, poi.lat),
+                null,
+                poi.id,
+            ).apply { addStringProperty("poiId", poi.id) }
+        }
+        source.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
+    LaunchedEffect(osmPois, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val source = style.getSource("osm-poi-source") as? GeoJsonSource ?: return@LaunchedEffect
+        val features = osmPois.map { poi ->
+            Feature.fromGeometry(
+                Point.fromLngLat(poi.lng, poi.lat),
+                null,
+                poi.id,
+            ).apply { addStringProperty("poiId", poi.id) }
+        }
+        source.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
     AndroidView(
         factory = {
             mapView.addOnDidFailLoadingMapListener {
@@ -289,6 +346,26 @@ fun MapComponent(
                             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                         )
                     )
+                    // OSM POI layer (below Google Places)
+                    style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+                    style.addLayer(
+                        SymbolLayer("osm-poi-symbols", "osm-poi-source").withProperties(
+                            PropertyFactory.iconImage("pin-osm-poi"),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                        )
+                    )
+                    // Google Places layer (above OSM, below user POIs)
+                    style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+                    style.addLayer(
+                        SymbolLayer("google-places-symbols", "google-places-source").withProperties(
+                            PropertyFactory.iconImage("pin-google-place"),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                        )
+                    )
                     style.addLayer(
                         SymbolLayer("poi-symbols", "poi-source").withProperties(
                             PropertyFactory.iconImage(Expression.get("icon-id")),
@@ -300,12 +377,30 @@ fun MapComponent(
                     map.addOnMapClickListener { latLng ->
                         val pt = map.projection.toScreenLocation(latLng)
                         val rect = RectF(pt.x - 24f, pt.y - 24f, pt.x + 24f, pt.y + 24f)
-                        // POIs take priority
+                        // User POIs take highest priority
                         val poiHit = map.queryRenderedFeatures(rect, "poi-symbols")
                         if (poiHit.isNotEmpty()) {
                             val poiId = poiHit[0].getStringProperty("poiId")
                             if (poiId != null) {
                                 onPoiTappedRef.value(poiId)
+                                return@addOnMapClickListener true
+                            }
+                        }
+                        // Google Places second
+                        val googleHit = map.queryRenderedFeatures(rect, "google-places-symbols")
+                        if (googleHit.isNotEmpty()) {
+                            val placeId = googleHit[0].getStringProperty("poiId")
+                            if (placeId != null) {
+                                onGooglePlaceTappedRef.value(placeId)
+                                return@addOnMapClickListener true
+                            }
+                        }
+                        // OSM POIs third
+                        val osmHit = map.queryRenderedFeatures(rect, "osm-poi-symbols")
+                        if (osmHit.isNotEmpty()) {
+                            val osmId = osmHit[0].getStringProperty("poiId")
+                            if (osmId != null) {
+                                onOsmPoiTappedRef.value(osmId)
                                 return@addOnMapClickListener true
                             }
                         }
@@ -326,6 +421,18 @@ fun MapComponent(
                         val pos = map.cameraPosition
                         val target = pos.target ?: return@addOnCameraIdleListener
                         onCameraIdleRef.value(
+                            target.latitude,
+                            target.longitude,
+                            pos.zoom,
+                            pos.bearing,
+                            pos.tilt,
+                        )
+                        val bounds = map.projection.visibleRegion.latLngBounds
+                        onBoundsChangedRef.value(
+                            bounds.getLatNorth(),
+                            bounds.getLatSouth(),
+                            bounds.getLonEast(),
+                            bounds.getLonWest(),
                             target.latitude,
                             target.longitude,
                             pos.zoom,

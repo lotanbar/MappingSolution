@@ -65,6 +65,8 @@ fun MainScreen(
     onAddPoi: (lat: Double, lng: Double) -> Unit,
     onPoiTapped: (poiId: String) -> Unit,
     onRouteTapped: (routeId: String) -> Unit = {},
+    onGooglePlaceTapped: (placeId: String) -> Unit = {},
+    onOsmPoiTapped: (osmId: String) -> Unit = {},
     onNavigateToFinalize: (routeId: String) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel(),
     recordingViewModel: RecordingViewModel = hiltViewModel(),
@@ -77,6 +79,8 @@ fun MainScreen(
     val routePoints by viewModel.routePoints.collectAsState()
     val recordingState by recordingViewModel.state.collectAsState()
     val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
+    val googlePlaces by viewModel.googlePlacesRepository.pois.collectAsState()
+    val osmPois by viewModel.osmPoiRepository.pois.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
@@ -301,14 +305,21 @@ fun MainScreen(
                     groups = groups,
                     routes = routes,
                     routePoints = routePoints,
+                    googlePlaces = googlePlaces,
+                    osmPois = osmPois,
                     onPoiTapped = onPoiTapped,
                     onRouteTapped = onRouteTapped,
+                    onGooglePlaceTapped = onGooglePlaceTapped,
+                    onOsmPoiTapped = onOsmPoiTapped,
                     onMapError = { mapError = it },
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
                     liveRouteColor = (recordingState as? RecordingState.Active)?.color ?: "#FFFF5722",
                     flyToLocation = flyToTarget,
                     initialCamera = viewModel.initialCamera,
                     onCameraIdle = viewModel::saveCameraPosition,
+                    onBoundsChanged = { north, south, east, west, lat, lng, zoom, bearing, tilt ->
+                        viewModel.onCameraChanged(lat, lng, zoom, bearing, tilt, north, south, east, west)
+                    },
                     onMapReady = { map -> viewModel.mapHolder.register(map) },
                     // Keep the map reference alive while recording so road snapping keeps
                     // working even if the user navigates away from the main screen.

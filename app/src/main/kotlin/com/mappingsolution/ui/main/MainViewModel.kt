@@ -10,15 +10,23 @@ import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.model.RoutePoint
+import com.mappingsolution.data.places.GOOGLE_PLACES_FETCH_DEBOUNCE_MS
+import com.mappingsolution.data.places.GooglePlacesRepository
+import com.mappingsolution.data.places.NEARBY_POI_MIN_ZOOM
+import com.mappingsolution.data.places.OSM_FETCH_DEBOUNCE_MS
+import com.mappingsolution.data.places.OsmPoiRepository
 import com.mappingsolution.data.prefs.ViewportPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -28,6 +36,8 @@ class MainViewModel @Inject constructor(
     poiRepository: PoiFileRepository,
     private val routeRepository: RouteFileRepository,
     val mapHolder: MapHolder,
+    val googlePlacesRepository: GooglePlacesRepository,
+    val osmPoiRepository: OsmPoiRepository,
 ) : ViewModel() {
 
     val groups: StateFlow<List<Group>> = groupRepository.observeAll()
@@ -59,7 +69,49 @@ class MainViewModel @Inject constructor(
     /** Reads last known viewport — always fresh (in-memory first, then disk). */
     val initialCamera: ViewportPreference.SavedCamera? get() = mapHolder.loadCamera()
 
+    private var googleRefreshJob: Job? = null
+    private var osmRefreshJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            googlePlacesRepository.evictStaleCacheOnLaunch()
+            osmPoiRepository.evictStaleCacheOnLaunch()
+        }
+    }
+
     fun saveCameraPosition(lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) {
         mapHolder.saveCamera(lat, lng, zoom, bearing, tilt)
     }
+
+    /**
+     * Called whenever the map camera becomes idle. Saves the position and, when zoomed in
+     * enough, triggers debounced POI fetches for both sources.
+     */
+    fun onCameraChanged(
+        lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double,
+        north: Double, south: Double, east: Double, west: Double,
+    ) {
+        saveCameraPosition(lat, lng, zoom, bearing, tilt)
+
+        if (zoom < NEARBY_POI_MIN_ZOOM) {
+            googleRefreshJob?.cancel()
+            osmRefreshJob?.cancel()
+            googlePlacesRepository.clear()
+            osmPoiRepository.clear()
+            return
+        }
+
+        googleRefreshJob?.cancel()
+        googleRefreshJob = viewModelScope.launch {
+            delay(GOOGLE_PLACES_FETCH_DEBOUNCE_MS)
+            googlePlacesRepository.refreshForViewport(north, south, east, west)
+        }
+
+        osmRefreshJob?.cancel()
+        osmRefreshJob = viewModelScope.launch {
+            delay(OSM_FETCH_DEBOUNCE_MS)
+            osmPoiRepository.refreshForViewport(north, south, east, west)
+        }
+    }
 }
+

@@ -121,6 +121,10 @@ fun LibraryScreen(
     val importProgressText by viewModel.importProgressText.collectAsState()
     val importProgressFraction by viewModel.importProgressFraction.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
+    val googlePlaceCount by viewModel.googlePlaceCount.collectAsState()
+    val osmPoiCount by viewModel.osmPoiCount.collectAsState()
+    val googlePlacesGroup by viewModel.googlePlacesGroup.collectAsState()
+    val osmPoiGroup by viewModel.osmPoiGroup.collectAsState()
 
     val context = LocalContext.current
 
@@ -458,6 +462,31 @@ fun LibraryScreen(
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
+            // ── Live POI layers (Google Places + OSM) ─────────────────────
+            if (googlePlacesGroup != null || osmPoiGroup != null) {
+                item { SectionHeader("Nearby POI Layers") }
+                googlePlacesGroup?.let { group ->
+                    item(key = "places-group") {
+                        PlacesGroupRow(
+                            group = group,
+                            count = googlePlaceCount,
+                            onToggleVisibility = { viewModel.toggleGooglePlacesVisibility() },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                }
+                osmPoiGroup?.let { group ->
+                    item(key = "osm-group") {
+                        PlacesGroupRow(
+                            group = group,
+                            count = osmPoiCount,
+                            onToggleVisibility = { viewModel.toggleOsmPoisVisibility() },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+                }
+            }
+
             // ── Groups & POIs ─────────────────────────────────────────────
             if (filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()) {
                 item { SectionHeader("Groups & POIs") }
@@ -1087,3 +1116,47 @@ private fun formatDuration(seconds: Long): String {
 
 private fun formatDate(epochMs: Long): String =
     SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(epochMs))
+
+// ── Protected places group row ────────────────────────────────────────────────
+
+@Composable
+private fun PlacesGroupRow(
+    group: Group,
+    count: Int,
+    onToggleVisibility: () -> Unit,
+) {
+    val groupColor = parseHexColor(group.color)
+    val countText = if (count > 0) "$count POI${if (count != 1) "s" else ""}" else group.description
+    ListItem(
+        headlineContent = { Text(group.name, style = MaterialTheme.typography.bodyLarge) },
+        supportingContent = countText?.let {
+            { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 1) }
+        },
+        leadingContent = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .drawBehind { drawCircle(groupColor) },
+            ) {
+                Icon(
+                    imageVector = IconCatalog.iconVector(group.iconKey),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        },
+        trailingContent = {
+            IconButton(onClick = onToggleVisibility) {
+                Icon(
+                    imageVector = if (group.isVisible) Icons.Default.Visibility
+                                  else Icons.Default.VisibilityOff,
+                    contentDescription = if (group.isVisible) "Hide" else "Show",
+                    tint = if (group.isVisible) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
+            }
+        },
+    )
+}

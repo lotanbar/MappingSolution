@@ -95,6 +95,7 @@ fun ItemDetailScreen(
             is DetailItem.PoiDetail -> PoiDetailContent(
                 item = item,
                 modifier = Modifier.padding(padding),
+                isReadOnly = item.isReadOnly,
                 onNavigateBack = onNavigateBack,
                 onNavigateToEdit = onNavigateToEditPoi,
                 onOpenMediaPreview = onOpenMediaPreview,
@@ -119,6 +120,7 @@ fun ItemDetailScreen(
 private fun PoiDetailContent(
     item: DetailItem.PoiDetail,
     modifier: Modifier = Modifier,
+    isReadOnly: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToEdit: (poiId: String) -> Unit,
     onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
@@ -177,6 +179,7 @@ private fun PoiDetailContent(
             onEditClick = { onNavigateToEdit(poi.id) },
             editLabel = "Edit POI",
             deleteLabel = "Remove POI",
+            isReadOnly = isReadOnly,
             onDeleteClick = {
                 val now = System.currentTimeMillis()
                 if (now - lastDeleteClickTime < 2000) {
@@ -192,6 +195,7 @@ private fun PoiDetailContent(
                     ).show()
                 }
             },
+            context = context,
         )
     }
 }
@@ -252,6 +256,7 @@ private fun RouteDetailContent(
                     ).show()
                 }
             },
+            context = context,
         )
     }
 }
@@ -262,7 +267,9 @@ private fun DetailBottomBar(
     onEditClick: () -> Unit,
     editLabel: String,
     deleteLabel: String,
+    isReadOnly: Boolean = false,
     onDeleteClick: () -> Unit,
+    context: android.content.Context? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -271,28 +278,47 @@ private fun DetailBottomBar(
     ) {
         Column {
             Button(
-                onClick = onEditClick,
+                onClick = {
+                    if (isReadOnly) {
+                        android.widget.Toast.makeText(
+                            context, "Cannot edit this POI", android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        onEditClick()
+                    }
+                },
+                enabled = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .height(52.dp),
+                colors = if (isReadOnly) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(editLabel)
             }
-            Button(
-                onClick = onDeleteClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                ),
-            ) {
-                Text(deleteLabel)
+            if (!isReadOnly) {
+                Button(
+                    onClick = onDeleteClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) {
+                    Text(deleteLabel)
+                }
             }
         }
     }

@@ -12,6 +12,10 @@ import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
+import com.mappingsolution.data.places.GooglePlacesRepository
+import com.mappingsolution.data.places.OSM_POI_GROUP_ID
+import com.mappingsolution.data.places.OsmPoiRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +48,8 @@ class LibraryViewModel @Inject constructor(
     private val routeRepository: RouteFileRepository,
     private val importRepository: ImportRepository,
     private val exportRepository: ExportRepository,
+    private val googlePlacesRepository: GooglePlacesRepository,
+    private val osmPoiRepository: OsmPoiRepository,
 ) : ViewModel() {
 
     // ── Raw data ──────────────────────────────────────────────────────────
@@ -57,6 +63,34 @@ class LibraryViewModel @Inject constructor(
 
     /** All groups unfiltered — used for the group-picker dialog in un-orphan. */
     val allGroupsUnfiltered: StateFlow<List<Group>> = _allGroups
+
+    // ── Places group counts + visibility ─────────────────────────────────
+
+    val googlePlaceCount: StateFlow<Int> = googlePlacesRepository.pois
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    val osmPoiCount: StateFlow<Int> = osmPoiRepository.pois
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    val googlePlacesGroup: StateFlow<Group?> = _allGroups
+        .map { groups -> groups.find { it.id == GOOGLE_PLACES_GROUP_ID } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val osmPoiGroup: StateFlow<Group?> = _allGroups
+        .map { groups -> groups.find { it.id == OSM_POI_GROUP_ID } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun toggleGooglePlacesVisibility() {
+        val group = googlePlacesGroup.value ?: return
+        viewModelScope.launch { groupRepository.update(group.copy(isVisible = !group.isVisible)) }
+    }
+
+    fun toggleOsmPoisVisibility() {
+        val group = osmPoiGroup.value ?: return
+        viewModelScope.launch { groupRepository.update(group.copy(isVisible = !group.isVisible)) }
+    }
 
     // ── Search ────────────────────────────────────────────────────────────
 
@@ -75,13 +109,14 @@ class LibraryViewModel @Inject constructor(
 
     // ── Filtered lists ────────────────────────────────────────────────────
 
-    /** Groups shown in the list: name matches OR has a member POI whose name matches. */
+    /** Groups shown in the list: excludes the seeded places groups (rendered separately). */
     val filteredGroups: StateFlow<List<Group>> = combine(
         _allGroups, _allPois, _searchQuery,
     ) { groups, pois, query ->
-        if (query.isBlank()) return@combine groups
+        val userGroups = groups.filter { it.id != GOOGLE_PLACES_GROUP_ID && it.id != OSM_POI_GROUP_ID }
+        if (query.isBlank()) return@combine userGroups
         val poisByGroup = pois.groupBy { it.groupId }
-        groups.filter { g ->
+        userGroups.filter { g ->
             g.name.contains(query, ignoreCase = true) ||
                 poisByGroup[g.id]?.any { it.name.contains(query, ignoreCase = true) } == true
         }

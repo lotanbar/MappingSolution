@@ -1,6 +1,8 @@
 package com.mappingsolution.data.fs
 
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
+import com.mappingsolution.data.places.OSM_POI_GROUP_ID
 import com.mappingsolution.data.util.StorageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,7 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
         CoroutineScope(Dispatchers.IO).launch {
             loadAll()
             if (_groups.value.isEmpty()) seedDefault()
+            seedPlacesGroups()
         }
     }
 
@@ -47,6 +50,37 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             color = "#FF2196F3",
         )
         insertRaw(default)
+    }
+
+    /** Seeds the Google Places and OSM POI groups once, using fixed IDs. Idempotent. */
+    private fun seedPlacesGroups() {
+        val existingIds = _groups.value.map { it.id }.toSet()
+        if (GOOGLE_PLACES_GROUP_ID !in existingIds) {
+            insertRaw(
+                Group(
+                    id = GOOGLE_PLACES_GROUP_ID,
+                    name = "Google Places",
+                    description = "Nearby businesses from Google",
+                    iconKey = "place",
+                    color = "#FF4285F4",
+                    isImported = true,
+                )
+            )
+            android.util.Log.i("GroupFileRepository", "Seeded Google Places group")
+        }
+        if (OSM_POI_GROUP_ID !in existingIds) {
+            insertRaw(
+                Group(
+                    id = OSM_POI_GROUP_ID,
+                    name = "OpenStreetMap POIs",
+                    description = "Natural & historic landmarks from OSM",
+                    iconKey = "terrain",
+                    color = "#FF4CAF50",
+                    isImported = true,
+                )
+            )
+            android.util.Log.i("GroupFileRepository", "Seeded OpenStreetMap POIs group")
+        }
     }
 
     private fun insertRaw(group: Group) {
