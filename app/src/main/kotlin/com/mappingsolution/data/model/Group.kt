@@ -11,6 +11,10 @@ data class Group(
     val isVisible: Boolean = true,
     val isImported: Boolean = false,
     val importComplete: Boolean = true,
+    /** True when this group's POIs are stored as a single bulk_pois.jsonl instead of per-POI folders. */
+    val isBulk: Boolean = false,
+    /** Number of POIs in a bulk group (stored in the group file to avoid scanning the jsonl). */
+    val bulkPoiCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

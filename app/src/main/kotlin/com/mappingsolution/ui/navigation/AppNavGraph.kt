@@ -60,6 +60,7 @@ fun AppNavGraph() {
                 onRouteTapped = { routeId -> navController.navigate("item_detail/route/$routeId") },
                 onGooglePlaceTapped = { placeId -> navController.navigate("item_detail/google_place/$placeId") },
                 onOsmPoiTapped = { osmId -> navController.navigate("item_detail/osm_poi/$osmId") },
+                onBulkPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
                 onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
             )
         }

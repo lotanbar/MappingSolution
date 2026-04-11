@@ -493,7 +493,7 @@ fun LibraryScreen(
                     val isExpanded = isCollapsible && group.id in expandedGroups
                     val isGroupSelected = (selectionMode as? LibrarySelectionMode.GroupSelection)
                         ?.selectedIds?.contains(group.id) == true
-                    val poiCount = poisByGroup[group.id]?.size ?: 0
+                    val poiCount = if (group.isBulk) group.bulkPoiCount else poisByGroup[group.id]?.size ?: 0
 
                     item(key = "group-${group.id}") {
                         val isGroupImporting = isImporting &&
@@ -932,7 +932,7 @@ private fun DestructiveCooldownDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var seconds by remember { mutableIntStateOf(10) }
+    var seconds by remember { mutableIntStateOf(5) }
     LaunchedEffect(Unit) {
         while (seconds > 0) { delay(1_000L); seconds-- }
     }
@@ -1123,7 +1123,7 @@ private fun PlacesGroupRow(
     onToggleVisibility: () -> Unit,
 ) {
     val groupColor = parseHexColor(group.color)
-    val countText = if (count > 0) "$count POI${if (count != 1) "s" else ""}" else group.description
+    val countText: String? = null
     ListItem(
         headlineContent = { Text(group.name, style = MaterialTheme.typography.bodyLarge) },
         supportingContent = countText?.let {

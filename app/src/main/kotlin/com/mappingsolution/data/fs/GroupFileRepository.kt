@@ -101,9 +101,14 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
         val trimmed = name.trim()
         val existing = _groups.value.find { it.name.trim().equals(trimmed, ignoreCase = true) && it.isImported }
         if (existing != null) {
-            val poiIds = poiRepository.getIdsByGroup(existing.id)
-            poiRepository.deleteByIds(poiIds) { done, total ->
-                onProgress("Removing previous import…", done, total)
+            if (existing.isBulk) {
+                // Bulk groups: delete the whole group folder (jsonl + images) wholesale
+                storageManager.deletePoiFolder(existing.name, existing.id)
+            } else {
+                val poiIds = poiRepository.getIdsByGroup(existing.id)
+                poiRepository.deleteByIds(poiIds) { done, total ->
+                    onProgress("Removing previous import…", done, total)
+                }
             }
             storageManager.getGroupFile(existing.name).delete()
             _groups.value = _groups.value.filter { it.id != existing.id }
@@ -127,14 +132,14 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
         val iconKey = candidateIcons.firstOrNull { it !in usedIcons } ?: "place"
         val color = candidateColors.firstOrNull { it !in usedColors } ?: "#FF4CAF50"
 
-        val group = Group(name = trimmed, iconKey = iconKey, color = color, isImported = true, importComplete = false)
+        val group = Group(name = trimmed, iconKey = iconKey, color = color, isImported = true, isBulk = true, importComplete = false)
         insertRaw(group)
         group.id
     }
 
-    suspend fun markImportComplete(groupId: String) = withContext(Dispatchers.IO) {
+    suspend fun markImportComplete(groupId: String, bulkPoiCount: Int = 0) = withContext(Dispatchers.IO) {
         val group = _groups.value.find { it.id == groupId } ?: return@withContext
-        val updated = group.copy(importComplete = true, updatedAt = System.currentTimeMillis())
+        val updated = group.copy(importComplete = true, bulkPoiCount = bulkPoiCount, updatedAt = System.currentTimeMillis())
         writeGroup(updated)
         _groups.value = _groups.value.map { if (it.id == groupId) updated else it }
     }
@@ -197,6 +202,14 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
         Result.success(Unit)
     }
 
+    /** Toggles the isVisible flag without running duplicate validation. Safe to call for any group. */
+    suspend fun setVisibility(groupId: String, isVisible: Boolean) = withContext(Dispatchers.IO) {
+        val group = _groups.value.find { it.id == groupId } ?: return@withContext
+        val updated = group.copy(isVisible = isVisible, updatedAt = System.currentTimeMillis())
+        writeGroup(updated)
+        _groups.value = _groups.value.map { if (it.id == groupId) updated else it }
+    }
+
     suspend fun delete(group: Group) = withContext(Dispatchers.IO) {
         storageManager.getGroupFile(group.name).delete()
         _groups.value = _groups.value.filter { it.id != group.id }
@@ -224,6 +237,8 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             put("isVisible", group.isVisible)
             put("isImported", group.isImported)
             put("importComplete", group.importComplete)
+            put("isBulk", group.isBulk)
+            put("bulkPoiCount", group.bulkPoiCount)
             put("createdAt", group.createdAt)
             put("updatedAt", group.updatedAt)
         }
@@ -241,6 +256,8 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             isVisible = json.optBoolean("isVisible", true),
             isImported = json.optBoolean("isImported", false),
             importComplete = json.optBoolean("importComplete", true),
+            isBulk = json.optBoolean("isBulk", false),
+            bulkPoiCount = json.optInt("bulkPoiCount", 0),
             createdAt = json.getLong("createdAt"),
             updatedAt = json.getLong("updatedAt"),
         )

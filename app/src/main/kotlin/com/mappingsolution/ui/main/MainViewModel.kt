@@ -2,6 +2,7 @@ package com.mappingsolution.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
@@ -39,6 +40,7 @@ class MainViewModel @Inject constructor(
     val mapHolder: MapHolder,
     val googlePlacesRepository: GooglePlacesRepository,
     val osmPoiRepository: OsmPoiRepository,
+    val bulkPoiRepository: BulkPoiRepository,
 ) : ViewModel() {
 
     val groups: StateFlow<List<Group>> = groupRepository.observeAll()
@@ -74,10 +76,15 @@ class MainViewModel @Inject constructor(
     val isPoisLoading: StateFlow<Boolean> = combine(
         googlePlacesRepository.isLoading,
         osmPoiRepository.isLoading,
-    ) { g, o -> g || o }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+        bulkPoiRepository.isLoading,
+    ) { g, o, b -> g || o || b }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val bulkPois: StateFlow<List<Poi>> = bulkPoiRepository.poisInViewport
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var googleRefreshJob: Job? = null
     private var osmRefreshJob: Job? = null
+    private var bulkRefreshJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -103,8 +110,10 @@ class MainViewModel @Inject constructor(
         if (zoom < NEARBY_POI_MIN_ZOOM) {
             googleRefreshJob?.cancel()
             osmRefreshJob?.cancel()
+            bulkRefreshJob?.cancel()
             googlePlacesRepository.clear()
             osmPoiRepository.clear()
+            bulkPoiRepository.clear()
             return
         }
 
@@ -119,6 +128,13 @@ class MainViewModel @Inject constructor(
             delay(OSM_FETCH_DEBOUNCE_MS)
             osmPoiRepository.refreshForViewport(north, south, east, west)
         }
+
+        val bulkGroups = groups.value.filter { it.isBulk && it.importComplete }
+        if (bulkGroups.isNotEmpty()) {
+            bulkRefreshJob?.cancel()
+            bulkRefreshJob = viewModelScope.launch {
+                bulkPoiRepository.refreshForViewport(bulkGroups, north, south, east, west)
+            }
+        }
     }
 }
-

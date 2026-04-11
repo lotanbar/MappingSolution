@@ -28,6 +28,12 @@ class StorageManager @Inject constructor() {
     fun getPoiFile(name: String, id: String): File = File(getPoiDir(name, id), "poi.json")
     /** Media files live flat inside the POI folder (no media/ subfolder). Does NOT create the dir. */
     fun getPoiMediaDir(name: String, id: String): File = File(getPoisDir(), poiFolderName(name, id))
+
+    // ── Bulk imported POIs — one folder per group ─────────────────────────
+    /** The JSONL file holding all POIs for a bulk-imported group (one JSON object per line). */
+    fun getBulkPoisFile(name: String, id: String): File = File(getPoiDir(name, id), "bulk_pois.jsonl")
+    /** The images subfolder inside a bulk group folder. */
+    fun getBulkImagesDir(name: String, id: String): File = File(getPoiDir(name, id), "images")
     fun deletePoiFolder(name: String, id: String): Boolean =
         File(getPoisDir(), poiFolderName(name, id)).deleteRecursively()
     fun renamePoiFolder(oldName: String, newName: String, id: String) {

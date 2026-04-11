@@ -100,6 +100,7 @@ fun MapComponent(
     routePoints: Map<String, List<RoutePoint>> = emptyMap(),
     googlePlaces: List<Poi> = emptyList(),
     osmPois: List<Poi> = emptyList(),
+    bulkPois: List<Poi> = emptyList(),
     liveRoutePoints: List<RecordingPoint> = emptyList(),
     liveRouteColor: String = "#FFFF5722",
     flyToLocation: Pair<Double, Double>? = null,
@@ -110,6 +111,7 @@ fun MapComponent(
     onRouteTapped: (String) -> Unit = {},
     onGooglePlaceTapped: (String) -> Unit = {},
     onOsmPoiTapped: (String) -> Unit = {},
+    onBulkPoiTapped: (String) -> Unit = {},
     onMapReady: (MapLibreMap) -> Unit = {},
     onMapDisposed: () -> Unit = {},
     onMapError: (String) -> Unit = {},
@@ -123,6 +125,7 @@ fun MapComponent(
     val onRouteTappedRef = rememberUpdatedState(onRouteTapped)
     val onGooglePlaceTappedRef = rememberUpdatedState(onGooglePlaceTapped)
     val onOsmPoiTappedRef = rememberUpdatedState(onOsmPoiTapped)
+    val onBulkPoiTappedRef = rememberUpdatedState(onBulkPoiTapped)
     val onCameraIdleRef = rememberUpdatedState(onCameraIdle)
     val onBoundsChangedRef = rememberUpdatedState(onBoundsChanged)
 
@@ -316,6 +319,25 @@ fun MapComponent(
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
+    LaunchedEffect(bulkPois, groups, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val source = style.getSource("bulk-poi-source") as? GeoJsonSource ?: return@LaunchedEffect
+        val features = bulkPois.map { poi ->
+            val iconId = "pin-${poi.groupId ?: "default"}"
+            Feature.fromGeometry(
+                Point.fromLngLat(poi.lng, poi.lat),
+                null,
+                poi.id,
+            ).apply {
+                addStringProperty("poiId", poi.id)
+                addStringProperty("icon-id", iconId)
+            }
+        }
+        source.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
     AndroidView(
         factory = {
             mapView.addOnDidFailLoadingMapListener {
@@ -346,7 +368,7 @@ fun MapComponent(
                             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                         )
                     )
-                    // OSM POI layer (below Google Places)
+                    // OSM POI layer (below bulk and Google Places)
                     style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addLayer(
                         SymbolLayer("osm-poi-symbols", "osm-poi-source").withProperties(
@@ -356,7 +378,17 @@ fun MapComponent(
                             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
                         )
                     )
-                    // Google Places layer (above OSM, below user POIs)
+                    // Bulk imported POIs layer (above OSM, below Google Places)
+                    style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+                    style.addLayer(
+                        SymbolLayer("bulk-poi-symbols", "bulk-poi-source").withProperties(
+                            PropertyFactory.iconImage(Expression.get("icon-id")),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                        )
+                    )
+                    // Google Places layer (above bulk, below user POIs)
                     style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addLayer(
                         SymbolLayer("google-places-symbols", "google-places-source").withProperties(
@@ -395,7 +427,16 @@ fun MapComponent(
                                 return@addOnMapClickListener true
                             }
                         }
-                        // OSM POIs third
+                        // Bulk imported POIs third
+                        val bulkHit = map.queryRenderedFeatures(rect, "bulk-poi-symbols")
+                        if (bulkHit.isNotEmpty()) {
+                            val bulkId = bulkHit[0].getStringProperty("poiId")
+                            if (bulkId != null) {
+                                onBulkPoiTappedRef.value(bulkId)
+                                return@addOnMapClickListener true
+                            }
+                        }
+                        // OSM POIs fourth
                         val osmHit = map.queryRenderedFeatures(rect, "osm-poi-symbols")
                         if (osmHit.isNotEmpty()) {
                             val osmId = osmHit[0].getStringProperty("poiId")

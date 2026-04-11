@@ -50,12 +50,6 @@ class ImportRepository @Inject constructor(
             ?: emptyList()
         val imagesDir = File(folder, "images").takeIf { it.isDirectory }
 
-        val imageFileMap: Map<String, File> = imagesDir
-            ?.listFiles()
-            ?.filter { it.isFile }
-            ?.associateBy { it.name }
-            ?: emptyMap()
-
         var routesCount = 0
         var skipped = 0
         val errors = mutableListOf<String>()
@@ -89,8 +83,6 @@ class ImportRepository @Inject constructor(
             val validationErrors = mutableListOf<String>()
             for ((i, poi) in allPois.withIndex()) {
                 val rowLabel = "Waypoint ${i + 1} (\"${poi.name}\")"
-                if (poi.name.isBlank())
-                    validationErrors.add("$rowLabel: missing name")
                 if (poi.lat !in -90.0..90.0)
                     validationErrors.add("$rowLabel: latitude ${poi.lat} out of range [-90, 90]")
                 if (poi.lng !in -180.0..180.0)
@@ -113,24 +105,60 @@ class ImportRepository @Inject constructor(
                 onProgress(phase, done, total)
             }
             val total = allPois.size
-            val preparedPois = ArrayList<Poi>(total)
+
+            // Pre-resolve image filenames so JSONL paths match the actual files on disk.
+            // AmudAnan stores originals as _x_200.avif thumbnails, so "photo.jpg" → "photo_x_200.avif".
+            val imageIndex = imagesDir?.let { buildImageIndex(it) } ?: emptyMap()
+            val resolvedPois = allPois.map { poi ->
+                if (imagesDir == null || poi.mediaPaths.isEmpty()) return@map poi
+                val resolvedPaths = poi.mediaPaths.map { filename ->
+                    resolveImageFile(imagesDir, filename, imageIndex)?.name ?: filename
+                }
+                poi.copy(mediaPaths = resolvedPaths)
+            }
+
+            // Write all POIs as a single bulk_pois.jsonl file (one JSON object per line)
+            val bulkFile = storageManager.getBulkPoisFile(folderName.trim(), groupId)
+            bulkFile.parentFile?.mkdirs()
+            onProgress("Writing to storage…", 0, total)
             var lastEmit = 0L
-            for ((i, poi) in allPois.withIndex()) {
-                val localPaths = if (poi.mediaPaths.isNotEmpty() && imageFileMap.isNotEmpty()) {
-                    copyImages(poi, poi.mediaPaths, imageFileMap)
-                } else emptyList()
-                preparedPois.add(poi.copy(groupId = groupId, mediaPaths = localPaths))
-                val now = System.currentTimeMillis()
-                if (now - lastEmit >= 32) {
-                    lastEmit = now
-                    onProgress("Copying images… $i / $total", i + 1, total)
+            bulkFile.bufferedWriter().use { writer ->
+                for ((i, poi) in resolvedPois.withIndex()) {
+                    writer.write(BulkPoiRepository.serializePoi(poi.copy(groupId = groupId)))
+                    writer.newLine()
+                    val now = System.currentTimeMillis()
+                    if (now - lastEmit >= 32 || i == total - 1) {
+                        lastEmit = now
+                        onProgress("Writing to storage…", i + 1, total)
+                    }
                 }
             }
-            onProgress("Writing to storage…", 0, total)
-            poiRepository.insertBatch(preparedPois) { done, t ->
-                onProgress("Writing to storage…", done, t)
+
+            // Copy images: each POI's referenced files go to its own media dir.
+            if (imagesDir != null) {
+                val poisWithImages = resolvedPois.filter { it.mediaPaths.isNotEmpty() }
+                onProgress("Copying images…", 0, poisWithImages.size)
+                var doneCount = 0
+                for (poi in poisWithImages) {
+                    val destDir = storageManager.getPoiMediaDir(poi.name, poi.id)
+                    destDir.mkdirs()
+                    for (filename in poi.mediaPaths) {
+                        val srcFile = File(imagesDir, filename).takeIf { it.isFile }
+                            ?: resolveImageFile(imagesDir, filename, imageIndex)
+                            ?: continue
+                        val destFile = File(destDir, srcFile.name)
+                        try {
+                            srcFile.copyTo(destFile, overwrite = true)
+                        } catch (e: Exception) {
+                            Log.w("ImportRepository", "Failed to copy image '${srcFile.name}': ${e.message}")
+                        }
+                    }
+                    doneCount++
+                    onProgress("Copying images…", doneCount, poisWithImages.size)
+                }
             }
-            groupRepository.markImportComplete(groupId)
+
+            groupRepository.markImportComplete(groupId, total)
         }
 
         if (allRoutes.isNotEmpty()) {
@@ -146,35 +174,10 @@ class ImportRepository @Inject constructor(
         ImportResult(
             poisImported = allPois.size,
             routesImported = routesCount,
-            filesProcessed = gpxFiles.size,
+            filesProcessed = gpxFiles.size - skipped,
             filesSkipped = skipped,
             errors = errors,
         )
-    }
-
-    /** Copies images from the images/ subdir into the POI's local media folder.
-     *  Returns the list of relative paths that were successfully copied. */
-    private fun copyImages(
-        poi: Poi,
-        filenames: List<String>,
-        imageFileMap: Map<String, File>,
-    ): List<String> {
-        var destDir: File? = null
-        val localPaths = mutableListOf<String>()
-        for (filename in filenames) {
-            val srcFile = imageFileMap[filename] ?: continue
-            if (destDir == null) {
-                destDir = storageManager.getPoiMediaDir(poi.name, poi.id).also { it.mkdirs() }
-            }
-            val destFile = File(destDir, filename)
-            try {
-                srcFile.inputStream().use { input ->
-                    destFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                localPaths.add(destFile.name)
-            } catch (_: Exception) { }
-        }
-        return localPaths
     }
 
     // ── GPX parser ────────────────────────────────────────────────────────────
@@ -274,6 +277,37 @@ class ImportRepository @Inject constructor(
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Builds a case-insensitive map from [nameWithoutExtension] → File for all files in [dir].
+     * Also adds an entry for each `_x_200` stem stripped back to its original stem, so that
+     * a GPX reference like "photo.jpg" can resolve to "photo_x_200.avif".
+     */
+    private fun buildImageIndex(dir: File): Map<String, File> {
+        val index = mutableMapOf<String, File>()
+        dir.listFiles()?.forEach { f ->
+            if (!f.isFile) return@forEach
+            val stem = f.nameWithoutExtension.lowercase()
+            index[stem] = f
+            // Also index by original stem (strip _x_200 suffix) for fallback resolution
+            if (stem.endsWith("_x_200")) {
+                val originalStem = stem.removeSuffix("_x_200")
+                index.putIfAbsent(originalStem, f)
+            }
+        }
+        return index
+    }
+
+    /**
+     * Resolves an image file from [imagesDir] by [filename].
+     * Tries exact match first, then the `_x_200` thumbnail variant used by AmudAnan.
+     */
+    private fun resolveImageFile(imagesDir: File, filename: String, index: Map<String, File>): File? {
+        val exact = File(imagesDir, filename)
+        if (exact.isFile) return exact
+        val stem = filename.substringBeforeLast('.').lowercase()
+        return index[stem]
+    }
 
     private fun buildRoute(
         name: String,

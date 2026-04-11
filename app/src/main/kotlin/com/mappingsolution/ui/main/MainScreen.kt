@@ -70,6 +70,7 @@ fun MainScreen(
     onRouteTapped: (routeId: String) -> Unit = {},
     onGooglePlaceTapped: (placeId: String) -> Unit = {},
     onOsmPoiTapped: (osmId: String) -> Unit = {},
+    onBulkPoiTapped: (poiId: String) -> Unit = {},
     onNavigateToFinalize: (routeId: String) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel(),
     recordingViewModel: RecordingViewModel = hiltViewModel(),
@@ -84,6 +85,7 @@ fun MainScreen(
     val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
     val googlePlaces by viewModel.googlePlacesRepository.pois.collectAsState()
     val osmPois by viewModel.osmPoiRepository.pois.collectAsState()
+    val bulkPois by viewModel.bulkPois.collectAsState()
     val isPoisLoading by viewModel.isPoisLoading.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
@@ -311,10 +313,12 @@ fun MainScreen(
                     routePoints = routePoints,
                     googlePlaces = googlePlaces,
                     osmPois = osmPois,
+                    bulkPois = bulkPois,
                     onPoiTapped = onPoiTapped,
                     onRouteTapped = onRouteTapped,
                     onGooglePlaceTapped = onGooglePlaceTapped,
                     onOsmPoiTapped = onOsmPoiTapped,
+                    onBulkPoiTapped = onBulkPoiTapped,
                     onMapError = { mapError = it },
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
                     liveRouteColor = (recordingState as? RecordingState.Active)?.color ?: "#FFFF5722",

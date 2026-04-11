@@ -3,6 +3,7 @@ package com.mappingsolution.ui.detail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
@@ -40,6 +41,7 @@ data class ItemDetailState(
 @HiltViewModel
 class ItemDetailViewModel @Inject constructor(
     private val poiRepository: PoiFileRepository,
+    private val bulkPoiRepository: BulkPoiRepository,
     private val routeRepository: RouteFileRepository,
     private val groupRepository: GroupFileRepository,
     private val googlePlacesRepository: GooglePlacesRepository,
@@ -71,17 +73,22 @@ class ItemDetailViewModel @Inject constructor(
     }
 
     private suspend fun loadPoi() {
-        val poi = poiRepository.getById(id) ?: run {
+        val poi = poiRepository.getById(id) ?: bulkPoiRepository.getById(id) ?: run {
             _state.update { it.copy(isLoading = false) }
             return
         }
+        val isBulk = poiRepository.getById(id) == null
         val group = poi.groupId?.let { groupRepository.getById(it) }
-        val absolutePaths = poi.mediaPaths.map { filename ->
-            storageManager.getPoiMediaDir(poi.name, poi.id).absolutePath + "/" + filename
+        val mediaDir = storageManager.getPoiMediaDir(poi.name, poi.id)
+        val absolutePaths = if (isBulk) {
+            // For bulk POIs use actual files on disk — stored filenames may differ from GPX references
+            mediaDir.listFiles()?.sortedBy { it.name }?.map { it.absolutePath } ?: emptyList()
+        } else {
+            poi.mediaPaths.map { filename -> mediaDir.absolutePath + "/" + filename }
         }
         _state.update {
             ItemDetailState(
-                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = absolutePaths),
+                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = absolutePaths, isReadOnly = isBulk),
                 isLoading = false,
             )
         }

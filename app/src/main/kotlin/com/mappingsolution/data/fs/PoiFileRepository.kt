@@ -29,7 +29,9 @@ class PoiFileRepository @Inject constructor(private val storageManager: StorageM
         val dir = storageManager.getPoisDir()
         _pois.value = dir.listFiles { f -> f.isDirectory }
             ?.mapNotNull { poiDir ->
-                val jsonFile = File(poiDir, "poi.json")
+                // Skip bulk-import group folders (they contain bulk_pois.jsonl, not individual poi.json files)
+                if (java.io.File(poiDir, "bulk_pois.jsonl").exists()) return@mapNotNull null
+                val jsonFile = java.io.File(poiDir, "poi.json")
                 if (jsonFile.exists()) readPoi(jsonFile) else null
             }
             ?.sortedBy { it.createdAt }

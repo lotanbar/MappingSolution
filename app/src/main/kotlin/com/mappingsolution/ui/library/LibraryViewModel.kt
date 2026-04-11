@@ -3,6 +3,7 @@ package com.mappingsolution.ui.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.ExportRepository
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.ImportRepository
@@ -50,6 +51,7 @@ class LibraryViewModel @Inject constructor(
     private val exportRepository: ExportRepository,
     private val googlePlacesRepository: GooglePlacesRepository,
     private val osmPoiRepository: OsmPoiRepository,
+    private val bulkPoiRepository: BulkPoiRepository,
 ) : ViewModel() {
 
     // ── Raw data ──────────────────────────────────────────────────────────
@@ -84,12 +86,12 @@ class LibraryViewModel @Inject constructor(
 
     fun toggleGooglePlacesVisibility() {
         val group = googlePlacesGroup.value ?: return
-        viewModelScope.launch { groupRepository.update(group.copy(isVisible = !group.isVisible)) }
+        viewModelScope.launch { groupRepository.setVisibility(group.id, !group.isVisible) }
     }
 
     fun toggleOsmPoisVisibility() {
         val group = osmPoiGroup.value ?: return
-        viewModelScope.launch { groupRepository.update(group.copy(isVisible = !group.isVisible)) }
+        viewModelScope.launch { groupRepository.setVisibility(group.id, !group.isVisible) }
     }
 
     // ── Search ────────────────────────────────────────────────────────────
@@ -201,7 +203,7 @@ class LibraryViewModel @Inject constructor(
     // ── Visibility ────────────────────────────────────────────────────────
 
     fun toggleGroupVisibility(group: Group) {
-        viewModelScope.launch { groupRepository.update(group.copy(isVisible = !group.isVisible)) }
+        viewModelScope.launch { groupRepository.setVisibility(group.id, !group.isVisible) }
     }
 
     fun togglePoiVisibility(poi: Poi) {
@@ -219,11 +221,22 @@ class LibraryViewModel @Inject constructor(
         val ids = (_selectionMode.value as? LibrarySelectionMode.GroupSelection)?.selectedIds ?: return
         viewModelScope.launch {
             _isBusy.value = true
-            val poisToDelete = _allPois.value.filter { it.groupId in ids }.map { it.id }
-            poiRepository.deleteByIds(poisToDelete) { done, total ->
-                reportProgress("Deleting…", done, total)
+            val selectedGroups = _allGroups.value.filter { it.id in ids }
+            val bulkIds = selectedGroups.filter { it.isBulk }.map { it.id }.toSet()
+            val regularIds = ids - bulkIds
+
+            // Delete regular POIs the normal way
+            val poisToDelete = _allPois.value.filter { it.groupId in regularIds }.map { it.id }
+            if (poisToDelete.isNotEmpty()) {
+                poiRepository.deleteByIds(poisToDelete) { done, total ->
+                    reportProgress("Deleting…", done, total)
+                }
             }
-            _allGroups.value.filter { it.id in ids }.forEach { groupRepository.delete(it) }
+            // Delete bulk group folders wholesale
+            selectedGroups.filter { it.isBulk }.forEach { group ->
+                bulkPoiRepository.deleteGroup(group.name, group.id)
+            }
+            selectedGroups.forEach { groupRepository.delete(it) }
             clearProgress()
             clearSelection()
         }
@@ -235,8 +248,11 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             _isBusy.value = true
             reportProgress("Orphaning…", 0, 0)
-            poiRepository.orphan(_allPois.value.filter { it.groupId in ids }.map { it.id })
-            _allGroups.value.filter { it.id in ids }.forEach { groupRepository.delete(it) }
+            val selectedGroups = _allGroups.value.filter { it.id in ids }
+            val regularIds = selectedGroups.filter { !it.isBulk }.map { it.id }.toSet()
+            // Bulk groups have no individual POIs in poiRepository — just delete the group record
+            poiRepository.orphan(_allPois.value.filter { it.groupId in regularIds }.map { it.id })
+            selectedGroups.forEach { groupRepository.delete(it) }
             clearProgress()
             clearSelection()
         }
