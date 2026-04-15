@@ -58,6 +58,7 @@ class RecordingService : Service() {
     private val stationaryWindow = ArrayDeque<Location>(STATIONARY_WINDOW + 1)
     private var isStationary = false
     private var stationaryExitCount = 0
+    private var postWarmupSettleCount = 0
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) = onNewLocation(location)
@@ -108,6 +109,13 @@ class RecordingService : Service() {
         private const val STATIONARY_RADIUS_METERS = 8.0
         /** Consecutive non-stationary fixes needed to resume recording after a stop. */
         private const val STATIONARY_EXIT_COUNT = 2
+
+        /**
+         * Fixes to discard immediately after the warmup window expires.
+         * The spike detector needs at least one prior emitted point to function; skipping
+         * a couple of fixes after warmup ensures it has history before committing any point.
+         */
+        private const val POST_WARMUP_SETTLE_FIXES = 2
 
         /** Location update interval/distance when battery saver is OFF. */
         private const val NORMAL_INTERVAL_MS = 2_000L
@@ -212,9 +220,11 @@ class RecordingService : Service() {
                 pausedSinceMs = null,
             )
         )
-        // GPS should still be locked after a short pause — skip warmup but clear stationary state.
+        // GPS should still be locked after a short pause — skip warmup and settling,
+        // but clear stationary state.
         recordingStartedAtMs = now - WARMUP_DURATION_MS
         resetMotionState()
+        postWarmupSettleCount = POST_WARMUP_SETTLE_FIXES
         startLocationUpdates()
     }
 
@@ -281,6 +291,13 @@ class RecordingService : Service() {
         // Pre-filter 2: warm-up — discard fixes until the GPS chip has had time to stabilise
         if (System.currentTimeMillis() - recordingStartedAtMs < WARMUP_DURATION_MS) return
 
+        // Post-warmup settling: discard the first few fixes after warmup so the spike
+        // detector accumulates enough history before committing any points.
+        if (postWarmupSettleCount < POST_WARMUP_SETTLE_FIXES) {
+            postWarmupSettleCount++
+            return
+        }
+
         val last = lastLocation
         val rawDist = if (last != null)
             haversineMeters(last.latitude, last.longitude, location.latitude, location.longitude)
@@ -335,6 +352,11 @@ class RecordingService : Service() {
             val addedDistance = if (prevEmit != null)
                 haversineMeters(prevEmit.lat, prevEmit.lng, point.lat, point.lng)
             else 0.0
+
+            // Deduplicate: skip points within 0.5 m of the last emitted point
+            // (e.g. GPS_PROVIDER and NETWORK_PROVIDER both delivering the same cached fix).
+            if (prevEmit != null && addedDistance < 0.5) return@launch
+
             lastEmittedPoint = point
 
             // Re-read state; it may have changed while awaiting the road query
@@ -364,6 +386,7 @@ class RecordingService : Service() {
         stationaryWindow.clear()
         isStationary = false
         stationaryExitCount = 0
+        postWarmupSettleCount = 0
     }
 
     private fun startNotificationTicker() {

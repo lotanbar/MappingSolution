@@ -1,12 +1,17 @@
 package com.mappingsolution.ui.library
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.ExportRepository
 import com.mappingsolution.data.fs.GroupFileRepository
-import com.mappingsolution.data.fs.ImportRepository
 import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
@@ -17,7 +22,9 @@ import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
 import com.mappingsolution.data.places.GooglePlacesRepository
 import com.mappingsolution.data.places.OSM_POI_GROUP_ID
 import com.mappingsolution.data.places.OsmPoiRepository
+import com.mappingsolution.service.ImportWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +36,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 sealed class DeleteGroupResult {
@@ -44,15 +52,17 @@ sealed interface LibrarySelectionMode {
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
+    @ApplicationContext context: Context,
     private val groupRepository: GroupFileRepository,
     private val poiRepository: PoiFileRepository,
     private val routeRepository: RouteFileRepository,
-    private val importRepository: ImportRepository,
     private val exportRepository: ExportRepository,
     private val googlePlacesRepository: GooglePlacesRepository,
     private val osmPoiRepository: OsmPoiRepository,
     private val bulkPoiRepository: BulkPoiRepository,
 ) : ViewModel() {
+
+    private val workManager = WorkManager.getInstance(context)
 
     // ── Raw data ──────────────────────────────────────────────────────────
 
@@ -304,9 +314,84 @@ class LibraryViewModel @Inject constructor(
     private val _importProgressFraction = MutableStateFlow(0f)
     val importProgressFraction: StateFlow<Float> = _importProgressFraction.asStateFlow()
 
-    private fun reportProgress(phase: String, done: Int, total: Int) {
-        _importProgressText.value = if (total > 0) "$phase $done / $total" else phase
-        _importProgressFraction.value = if (total > 0) done.toFloat() / total else 0f
+    private val _importResult = MutableStateFlow<ImportResult?>(null)
+    val importResult: StateFlow<ImportResult?> = _importResult.asStateFlow()
+
+    // ID of the work request we most recently enqueued (or reconnected to).
+    private var currentWorkId: UUID? = null
+    // ID of the last work record whose result was dismissed — filtered from re-emissions
+    // before WorkManager's async pruneWork() removes it from the database.
+    private var dismissedWorkId: UUID? = null
+
+    init {
+        // Reconnect to any import that was already running when this ViewModel was created
+        // (e.g. user navigated away mid-import and returned to the Library screen).
+        viewModelScope.launch {
+            workManager.getWorkInfosForUniqueWorkFlow(IMPORT_WORK_NAME).collect { infos ->
+                val info = when {
+                    // We started (or already reconnected to) a specific work request.
+                    currentWorkId != null -> infos.firstOrNull { it.id == currentWorkId }
+                    // Reconnection: prefer active work, then fall back to the most recent
+                    // terminal record — but never show a result we already dismissed.
+                    else -> infos.firstOrNull {
+                        it.id != dismissedWorkId &&
+                            (it.state == WorkInfo.State.RUNNING ||
+                                it.state == WorkInfo.State.ENQUEUED ||
+                                it.state == WorkInfo.State.BLOCKED)
+                    } ?: infos.lastOrNull { it.id != dismissedWorkId }
+                }
+                handleWorkInfo(info)
+            }
+        }
+    }
+
+    private fun handleWorkInfo(info: WorkInfo?) {
+        if (info == null) return
+        when (info.state) {
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                if (currentWorkId == null) currentWorkId = info.id
+                _isBusy.value = true
+            }
+            WorkInfo.State.RUNNING -> {
+                if (currentWorkId == null) currentWorkId = info.id
+                _isBusy.value = true
+                val folderName = info.tags.firstOrNull { it.startsWith(TAG_FOLDER_PREFIX) }
+                    ?.removePrefix(TAG_FOLDER_PREFIX)
+                if (folderName != null) _importingFolderName.value = folderName
+                val phase = info.progress.getString(ImportWorker.KEY_PHASE) ?: return
+                val done = info.progress.getInt(ImportWorker.KEY_DONE, 0)
+                val total = info.progress.getInt(ImportWorker.KEY_TOTAL, 0)
+                reportProgress(phase, done, total)
+            }
+            WorkInfo.State.SUCCEEDED -> {
+                if (currentWorkId == null) currentWorkId = info.id
+                val data = info.outputData
+                _importResult.value = ImportResult(
+                    poisImported = data.getInt(ImportWorker.KEY_POIS_IMPORTED, 0),
+                    routesImported = data.getInt(ImportWorker.KEY_ROUTES_IMPORTED, 0),
+                    filesProcessed = data.getInt(ImportWorker.KEY_FILES_PROCESSED, 0),
+                    filesSkipped = data.getInt(ImportWorker.KEY_FILES_SKIPPED, 0),
+                    errors = data.getStringArray(ImportWorker.KEY_ERRORS)?.toList() ?: emptyList(),
+                )
+                clearProgress()
+            }
+            WorkInfo.State.FAILED -> {
+                if (currentWorkId == null) currentWorkId = info.id
+                val data = info.outputData
+                _importResult.value = ImportResult(
+                    filesSkipped = data.getInt(ImportWorker.KEY_FILES_SKIPPED, 0),
+                    errors = data.getStringArray(ImportWorker.KEY_ERRORS)?.toList() ?: emptyList(),
+                    validationErrors = data.getStringArray(ImportWorker.KEY_VALIDATION_ERRORS)?.toList() ?: emptyList(),
+                )
+                clearProgress()
+            }
+            WorkInfo.State.CANCELLED -> {
+                if (currentWorkId == null || currentWorkId == info.id) {
+                    currentWorkId = null
+                    clearProgress()
+                }
+            }
+        }
     }
 
     private fun clearProgress() {
@@ -316,22 +401,38 @@ class LibraryViewModel @Inject constructor(
         _isBusy.value = false
     }
 
-    private val _importResult = MutableStateFlow<ImportResult?>(null)
-    val importResult: StateFlow<ImportResult?> = _importResult.asStateFlow()
-
-    fun importFromFolder(path: String) {
-        viewModelScope.launch {
-            _isBusy.value = true
-            _importingFolderName.value = java.io.File(path).name
-            reportProgress("Starting…", 0, 0)
-            _importResult.value = importRepository.importFolder(path) { phase, done, total ->
-                reportProgress(phase, done, total)
-            }
-            clearProgress()
-        }
+    private fun reportProgress(phase: String, done: Int, total: Int) {
+        _importProgressText.value = if (total > 0) "$phase $done / $total" else phase
+        _importProgressFraction.value = if (total > 0) done.toFloat() / total else 0f
     }
 
-    fun dismissImportResult() { _importResult.value = null }
+    fun importFromFolder(path: String) {
+        val folderName = java.io.File(path).name
+        val request = OneTimeWorkRequestBuilder<ImportWorker>()
+            .setInputData(workDataOf(ImportWorker.KEY_FOLDER_PATH to path))
+            .addTag("$TAG_FOLDER_PREFIX$folderName")
+            .build()
+        currentWorkId = request.id
+        dismissedWorkId = null
+        _importResult.value = null
+        _isBusy.value = true
+        _importingFolderName.value = folderName
+        _importProgressText.value = "Starting…"
+        _importProgressFraction.value = 0f
+        workManager.enqueueUniqueWork(IMPORT_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    fun dismissImportResult() {
+        dismissedWorkId = currentWorkId
+        currentWorkId = null
+        _importResult.value = null
+        workManager.pruneWork()
+    }
+
+    companion object {
+        private const val IMPORT_WORK_NAME = "poi_import"
+        private const val TAG_FOLDER_PREFIX = "folder:"
+    }
 
     // ── Export ────────────────────────────────────────────────────────────
 

@@ -43,6 +43,9 @@ class SmartTrackProcessor @Inject constructor() {
     private var pendingLatLng: Pair<Double, Double>? = null
     private var pendingTs: Long = 0L
 
+    /** Last road-snap position accepted by the continuity guard. Null when off-road. */
+    private var lastSnappedLatLng: Pair<Double, Double>? = null
+
     /** Reset all stateful components. Call when a new recording is started. */
     fun reset() {
         kalmanFilter.reset()
@@ -50,6 +53,7 @@ class SmartTrackProcessor @Inject constructor() {
         lastEmittedLatLng = null
         pendingLatLng = null
         pendingTs = 0L
+        lastSnappedLatLng = null
     }
 
     /**
@@ -107,7 +111,7 @@ class SmartTrackProcessor @Inject constructor() {
             RoadSnapper.SNAP_RADIUS_METERS
         }
 
-        val snapped: Pair<Double, Double>? = if (map != null) {
+        val rawSnapped: Pair<Double, Double>? = if (map != null) {
             withContext(Dispatchers.Main) {
                 // Wrap in runCatching so any MapLibre rendering-thread assertion or
                 // null-style transient errors don't crash the recording session.
@@ -125,9 +129,28 @@ class SmartTrackProcessor @Inject constructor() {
             }
         } else null
 
+        // Snap continuity guard: reject snaps that jump much further than the GPS actually
+        // moved since the last accepted snap. Prevents oscillation between parallel road
+        // features when the smoothed position sits equidistant between two roads.
+        val snapped: Pair<Double, Double>? = if (rawSnapped != null) {
+            val prevSnap = lastSnappedLatLng
+            val prevProc = prevProcessed
+            if (prevSnap != null && prevProc != null) {
+                val snapJump = haversineMeters(prevSnap.first, prevSnap.second, rawSnapped.first, rawSnapped.second)
+                val gpsMove = haversineMeters(prevProc.first, prevProc.second, smoothLat, smoothLng)
+                if (snapJump > maxOf(gpsMove * SNAP_CONTINUITY_MULTIPLIER, SNAP_CONTINUITY_FLOOR_METERS)) null
+                else rawSnapped
+            } else rawSnapped
+        } else null
+
         // Update hysteresis. Mode switches to ROAD only after ROAD_ENTER_COUNT consecutive
         // snapped fixes, preventing a single rogue snap from jumping the track.
         val mode = modeManager.onSnappedResult(snapped != null)
+
+        // Track the last accepted snap; clear when off-road so a stale reference
+        // doesn't constrain the first snap of the next road entry.
+        if (snapped != null) lastSnappedLatLng = snapped
+        else if (mode == TrackMode.OFF_ROAD) lastSnappedLatLng = null
 
         val (finalLat, finalLng) = if (mode == TrackMode.ROAD && snapped != null) {
             snapped
@@ -206,16 +229,26 @@ class SmartTrackProcessor @Inject constructor() {
          * Spike detector: minimum one-step displacement for a point to be considered a candidate
          * spike. Jumps smaller than this are normal GPS noise and are ignored.
          */
-        const val SPIKE_MIN_METERS = 20.0
+        const val SPIKE_MIN_METERS = 12.0
 
         /**
          * Spike detector: a point B is considered a spike when the direct distance A→C is less
          * than this fraction of max(A→B, B→C). The lower the ratio, the stricter the detector
          * (requires C to be very close to A for a spike to be declared).
          *
-         * 0.35 means: C must be within 35% of the departure distance from A.
-         * Example: if A→B = 57 m, A→C must be < 20 m to flag as spike.
+         * 0.45 means: C must be within 45% of the departure distance from A.
+         * Example: if A→B = 57 m, A→C must be < 26 m to flag as spike.
          */
-        const val SPIKE_RETURN_RATIO = 0.35
+        const val SPIKE_RETURN_RATIO = 0.45
+
+        /**
+         * Snap continuity guard: a new snap is rejected if it jumps more than
+         * [SNAP_CONTINUITY_MULTIPLIER] × GPS movement from the last accepted snap position.
+         * Prevents oscillation between parallel road features (e.g. road vs. sidewalk).
+         */
+        const val SNAP_CONTINUITY_MULTIPLIER = 2.0
+
+        /** Minimum floor for the snap continuity jump guard. */
+        const val SNAP_CONTINUITY_FLOOR_METERS = 15.0
     }
 }

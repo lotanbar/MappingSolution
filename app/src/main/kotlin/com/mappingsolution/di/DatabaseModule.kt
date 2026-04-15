@@ -1,5 +1,6 @@
 package com.mappingsolution.di
 
+import android.content.Context
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
@@ -7,6 +8,7 @@ import com.mappingsolution.data.util.StorageManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -16,7 +18,7 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideStorageManager(): StorageManager = StorageManager()
+    fun provideStorageManager(@ApplicationContext context: Context): StorageManager = StorageManager(context)
 
     @Provides
     @Singleton

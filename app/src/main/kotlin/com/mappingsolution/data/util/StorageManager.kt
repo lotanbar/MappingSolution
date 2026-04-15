@@ -1,14 +1,28 @@
 package com.mappingsolution.data.util
 
+import android.content.Context
 import android.os.Environment
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class StorageManager @Inject constructor() {
+class StorageManager @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
 
+    /** Public external storage root — for non-image data (JSON, JSONL, recordings, exports). */
     val rootDir: File = File(Environment.getExternalStorageDirectory(), "mapping-solution-assets")
+
+    /**
+     * App-private external storage — for image/media files.
+     * Unlike public external storage, the FUSE/MediaProvider layer does NOT restrict
+     * writing image file types (AVIF, JPEG, …) here; no media permission required.
+     * Falls back to internal storage if external is unavailable.
+     */
+    private val mediaRootDir: File
+        get() = (context.getExternalFilesDir(null) ?: context.filesDir)
 
     init { rootDir.mkdirs() }
 
@@ -26,25 +40,40 @@ class StorageManager @Inject constructor() {
     fun poiFolderName(name: String, id: String): String = "${sanitizeName(name)}_${id.take(8)}"
     fun getPoiDir(name: String, id: String): File = File(getPoisDir(), poiFolderName(name, id)).also { it.mkdirs() }
     fun getPoiFile(name: String, id: String): File = File(getPoiDir(name, id), "poi.json")
-    /** Media files live flat inside the POI folder (no media/ subfolder). Does NOT create the dir. */
-    fun getPoiMediaDir(name: String, id: String): File = File(getPoisDir(), poiFolderName(name, id))
+
+    /**
+     * Directory for a POI's media files (images, etc.).
+     * Stored in app-private external storage to avoid Android's MediaProvider
+     * FUSE restriction on writing image file types in public external storage.
+     */
+    fun getPoiMediaDir(name: String, id: String): File =
+        File(mediaRootDir, "pois/${poiFolderName(name, id)}").also { it.mkdirs() }
 
     // ── Bulk imported POIs — one folder per group ─────────────────────────
     /** The JSONL file holding all POIs for a bulk-imported group (one JSON object per line). */
     fun getBulkPoisFile(name: String, id: String): File = File(getPoiDir(name, id), "bulk_pois.jsonl")
-    /** The images subfolder inside a bulk group folder. */
-    fun getBulkImagesDir(name: String, id: String): File = File(getPoiDir(name, id), "images")
-    fun deletePoiFolder(name: String, id: String): Boolean =
+
+    fun deletePoiFolder(name: String, id: String): Boolean {
         File(getPoisDir(), poiFolderName(name, id)).deleteRecursively()
+        // Also remove the media dir in private storage
+        File(mediaRootDir, "pois/${poiFolderName(name, id)}").deleteRecursively()
+        return true
+    }
     fun renamePoiFolder(oldName: String, newName: String, id: String) {
         val oldDir = File(getPoisDir(), poiFolderName(oldName, id))
         val newDir = File(getPoisDir(), poiFolderName(newName, id))
         if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
             if (oldDir.renameTo(newDir)) {
-                // Rename succeeded; clean up any stale old dir left behind on some Android versions.
                 if (oldDir.exists()) oldDir.deleteRecursively()
             }
-            // If rename failed, leave oldDir intact — deleting it would permanently lose the data.
+        }
+        // Also rename the media dir in private storage
+        val oldMedia = File(mediaRootDir, "pois/${poiFolderName(oldName, id)}")
+        val newMedia = File(mediaRootDir, "pois/${poiFolderName(newName, id)}")
+        if (oldMedia.exists() && oldMedia.canonicalPath != newMedia.canonicalPath) {
+            if (oldMedia.renameTo(newMedia)) {
+                if (oldMedia.exists()) oldMedia.deleteRecursively()
+            }
         }
     }
 
@@ -61,14 +90,14 @@ class StorageManager @Inject constructor() {
         val newDir = File(getRecordingsDir(), recordingFolderName(newName, id))
         if (oldDir.exists() && oldDir.canonicalPath != newDir.canonicalPath) {
             if (oldDir.renameTo(newDir)) {
-                // Rename succeeded; clean up any stale old dir left behind on some Android versions.
                 if (oldDir.exists()) oldDir.deleteRecursively()
             }
-            // If rename failed, leave oldDir intact — deleting it would permanently lose the data.
         }
     }
 
-    fun getTempDir(): File = File(rootDir, "temp").also { it.mkdirs() }
+    /** Temporary staging directory for media files being attached to a POI. */
+    fun getTempDir(): File = File(mediaRootDir, "temp").also { it.mkdirs() }
+
     fun getExportsDir(): File = File(rootDir, "exports").also { it.mkdirs() }
 
     fun resolvePath(relativePath: String): File = File(rootDir, relativePath)

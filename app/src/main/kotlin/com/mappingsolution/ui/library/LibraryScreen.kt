@@ -1055,17 +1055,25 @@ private fun ImportResultDialog(result: ImportResult, onDismiss: () -> Unit) {
             confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
         )
     } else {
+        val failed = result.errors.isNotEmpty() && result.poisImported == 0 && result.routesImported == 0
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Import complete") },
+            title = { Text(if (failed) "Import failed" else "Import complete") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (result.poisImported > 0)
-                        Text("${result.poisImported} POI${if (result.poisImported != 1) "s" else ""} imported")
-                    if (result.routesImported > 0)
-                        Text("${result.routesImported} route${if (result.routesImported != 1) "s" else ""} imported")
-                    if (result.poisImported == 0 && result.routesImported == 0)
-                        Text("No items found to import.")
+                    if (failed) {
+                        Text(
+                            "An error occurred — no data was saved.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        if (result.poisImported > 0)
+                            Text("${result.poisImported} POI${if (result.poisImported != 1) "s" else ""} imported")
+                        if (result.routesImported > 0)
+                            Text("${result.routesImported} route${if (result.routesImported != 1) "s" else ""} imported")
+                        if (result.poisImported == 0 && result.routesImported == 0)
+                            Text("No items found to import.")
+                    }
                     if (result.filesSkipped > 0)
                         Text("${result.filesSkipped} file${if (result.filesSkipped != 1) "s" else ""} skipped")
                     if (result.errors.isNotEmpty()) {
