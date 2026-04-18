@@ -53,6 +53,9 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.BuildConfig
 import com.mappingsolution.data.model.Route
+import com.mappingsolution.data.places.GOOGLE_PLACES_MAX_RESULTS
+import com.mappingsolution.data.places.IMPORTED_POI_VIEWPORT_LIMIT
+import com.mappingsolution.data.places.OSM_VIEWPORT_LIMIT
 import com.mappingsolution.data.recording.RecordingEvent
 import com.mappingsolution.data.recording.RecordingState
 import com.mappingsolution.ui.main.components.BottomActionPanel
@@ -84,9 +87,15 @@ fun MainScreen(
     val routePoints by viewModel.routePoints.collectAsState()
     val recordingState by recordingViewModel.state.collectAsState()
     val incompleteRoutes by viewModel.incompleteRoutes.collectAsState()
-    val googlePlaces by viewModel.googlePlacesRepository.pois.collectAsState()
-    val osmPois by viewModel.osmPoiRepository.pois.collectAsState()
-    val bulkPois by viewModel.bulkPois.collectAsState()
+    val googlePlacesRaw by viewModel.googlePlacesRepository.pois.collectAsState()
+    val osmPoisRaw by viewModel.osmPoiRepository.pois.collectAsState()
+    val bulkPoisRaw by viewModel.bulkPois.collectAsState()
+
+    // Viewport allocation: 20 Google + 20 Overpass/Imported (40 total).
+    // Imported claims up to 10 of the 20 Overpass slots; Overpass gets the remainder.
+    val googlePlaces = googlePlacesRaw.take(GOOGLE_PLACES_MAX_RESULTS)
+    val bulkPois = bulkPoisRaw.take(IMPORTED_POI_VIEWPORT_LIMIT)
+    val osmPois = osmPoisRaw.take(OSM_VIEWPORT_LIMIT - bulkPois.size)
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
