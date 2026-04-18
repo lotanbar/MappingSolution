@@ -87,7 +87,6 @@ fun MainScreen(
     val googlePlaces by viewModel.googlePlacesRepository.pois.collectAsState()
     val osmPois by viewModel.osmPoiRepository.pois.collectAsState()
     val bulkPois by viewModel.bulkPois.collectAsState()
-    val isPoisLoading by viewModel.isPoisLoading.collectAsState()
 
     var isFetchingLocation by remember { mutableStateOf(false) }
     var locationError by remember { mutableStateOf<String?>(null) }
@@ -380,30 +379,7 @@ fun MainScreen(
                             )
                         }
                     }
-                    if (isPoisLoading) {
-                        Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shadowElevation = 4.dp,
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
-                                Text(
-                                    "POIs loading…",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
-                            }
-                        }
-                    }
+
                 }
             }
             BottomActionPanel(

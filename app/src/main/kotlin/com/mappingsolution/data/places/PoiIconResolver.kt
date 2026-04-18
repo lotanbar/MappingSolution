@@ -70,11 +70,11 @@ object PoiIconResolver {
         "marina"               to "anchor",
         "police"               to "local_police",
         "fire_station"         to "local_fire_department",
-        "church"               to "place",
-        "mosque"               to "place",
-        "synagogue"            to "place",
-        "hindu_temple"         to "place",
-        "place_of_worship"     to "place",
+        "church"               to "bookmark",
+        "mosque"               to "bookmark",
+        "synagogue"            to "bookmark",
+        "hindu_temple"         to "bookmark",
+        "place_of_worship"     to "bookmark",
         "cemetery"             to "favorite",
         "monument"             to "tour",
         "historical_landmark"  to "tour",
@@ -112,9 +112,9 @@ object PoiIconResolver {
         "ruins"               to "museum",
         "building"            to "museum",
         "manor"               to "museum",
-        "place_of_worship"    to "place",
-        "wayside_shrine"      to "place",
-        "wayside_cross"       to "place",
+        "place_of_worship"    to "bookmark",
+        "wayside_shrine"      to "bookmark",
+        "wayside_cross"       to "bookmark",
         "tomb"                to "favorite",
         "milestone"           to "tour",
         "boundary_stone"      to "tour",
@@ -164,7 +164,7 @@ object PoiIconResolver {
         "cinema"          to "theaters",
         "museum"          to "museum",
         "library"         to "museum",
-        "place_of_worship" to "place",
+        "place_of_worship" to "bookmark",
         "bus_station"     to "directions_bus",
         "taxi"            to "local_taxi",
         "ferry_terminal"  to "anchor",
@@ -211,7 +211,7 @@ object PoiIconResolver {
         listOf("memorial", "grave", "cemetery", "tombstone", "mausoleum")            to "favorite",
         listOf("statue", "sculpture")                                                 to "attractions",
         listOf("museum", "gallery", "exhibit", "exhibition")                         to "museum",
-        listOf("church", "cathedral", "chapel", "mosque", "temple", "synagogue", "shrine") to "place",
+        listOf("church", "cathedral", "chapel", "mosque", "temple", "synagogue", "shrine") to "bookmark",
         listOf("restaurant", "diner", "eatery", "bistro", "grill")                   to "restaurant",
         listOf("cafe", "coffee", "espresso")                                          to "local_cafe",
         listOf("bar", "pub", "tavern", "brewery", "saloon")                          to "local_bar",
@@ -244,7 +244,9 @@ object PoiIconResolver {
         listOf("kayak", "canoe", "rafting")                                         to "kayaking",
         listOf("sailing", "yacht")                                                  to "sailing",
         listOf("paragliding", "hang gliding", "gliding")                           to "paragliding",
-        listOf("hiking", "trail", "trekking", "trek", "walk path")                 to "hiking",
+        listOf("trail start", "trail end", "trailhead", "waypoint", "navigation point") to "navigation",
+        listOf("trail junction", "trail fork", "intersection", "crossroads")          to "near_me",
+        listOf("hiking", "trail", "trekking", "trek", "walk path")                   to "hiking",
         listOf("cycling", "bicycle", "bike")                                        to "directions_bike",
         listOf("fire station", "firehouse")                                         to "local_fire_department",
         listOf("police", "security", "law enforcement")                             to "local_police",
@@ -263,50 +265,106 @@ object PoiIconResolver {
     // Words are matched as substrings (case doesn't apply to Hebrew).
 
     private val IMPORT_HEBREW_KEYWORD_TABLE: List<Pair<List<String>, String>> = listOf(
+        // Burial caves — must be before generic cave/water so they win
+        listOf("מערת קבורה", "מערת קבר", "מערות קבורה", "מערת קבורות") to "favorite",
+
         // Terrain / topography
-        listOf("הר", "פסגה", "מצוק", "גבעה", "עמק", "ראש ההר", "מעלה", "מורד")            to "terrain",
-        listOf("מעבר", "צוואר", "אוכף")                                                      to "terrain",
-        // Water
-        listOf("מפל", "מפלים")                                                               to "waves",
-        listOf("נחל", "ואדי", "ואדי")                                                        to "waves",
-        listOf("מעיין", "עין", "גבים", "בור מים", "בריכת מים")                              to "water_drop",
-        listOf("ים", "חוף ים", "חוף")                                                        to "beach_access",
-        listOf("אגם", "ברכה", "בריכה")                                                       to "pool",
-        listOf("ביצה", "אזור לח")                                                            to "nature",
-        // Nature
-        listOf("מערה", "מחילה", "נקיק")                                                      to "landscape",
-        listOf("יער", "חורש", "עצים", "שיטה", "שיטים", "אורן", "שיזף", "אלה")              to "forest",
-        listOf("שמורה", "גן לאומי", "גן טבע", "שמורת טבע")                                  to "nature",
-        listOf("צמח", "צומח", "פרח", "פרחים")                                               to "nature",
-        // Viewpoints / observation
-        listOf("תצפית", "נקודת תצפית", "מצפה", "מצפור")                              to "visibility",
-        listOf("עמדת שמירה", "בונקר", "מוצב", "מחפורת")                               to "flag",
-        listOf("מגדל תצפית", "מגדל שמירה פנים", "מגדל מים")                          to "visibility",
+        // NOTE: "הר" alone EXCLUDED — it is a substring of "הרוס" (ruins) and "נהר" (river)
+        listOf("פסגה", "מצוק", "גבעה", "ראש ההר", "ראש", "מעלה", "מורד", "רכס", "גב הר", "גב") to "terrain",
+        listOf("מעבר", "צוואר", "אוכף") to "navigation",
+        listOf("עמק", "גיא", "קניון") to "landscape",
+
+        // Water features
+        listOf("מפל", "מפלים", "מפלון") to "waves",
+        listOf("נחל") to "waves",
+        listOf("ואדי") to "waves",
+        listOf("סכר") to "waves",  // dam / weir
+        // NOTE: "ים" alone EXCLUDED — it is the Hebrew plural suffix (שרידים, קברים, etc.)
+        listOf("חוף ים", "חוף הים", "חוף", "ים המלח", "כנרת", "ים סוף") to "beach_access",
+        // "בור" alone catches cisterns: בור פעמון, בור סיד, בור חצוב, etc.
+        listOf("מעיין", "מעין", "עין", "גבים", "נביעה",
+               "בור מים", "בריכת מים", "בריכת", "בורות מים", "בורות",
+               "בור", "באר", "באר מים", "מאגר מים", "ברז מים", "ציר מים",
+               "מגדל מים", "מגדל המים", "מעביר מים", "מעבר מים") to "water_drop",
+        listOf("אגם", "ברכה", "בריכה", "בריכת חורף", "שלולית") to "pool",
+        listOf("ביצה", "אזור לח") to "nature",
+
+        // Caves — after burial cave entry; "מערת" catches construct form (מערת התאנה etc.)
+        listOf("מערה", "מחילה", "נקיק", "מערות", "מערת", "מערונת", "פתח מערה") to "landscape",
+
+        // Flora / trees / flowers
+        listOf("יער", "חורש", "שיטה", "שיטים", "אורן", "שיזף", "אלה", "חרוב",
+               "אלון", "אשל", "עץ שיטה", "עץ שיזף", "עץ חרוב", "חורשת") to "forest",
+        listOf("שמורה", "גן לאומי", "גן טבע", "שמורת טבע") to "nature",
+        // Flowers — "אירוס" catches אירוסים, אירוס שחום, אירוס הסרגל; "חלמון" catches חלמוניות
+        listOf("פרח", "פרחים", "פריחה", "איריס", "אירוס", "כלנית", "נרקיס",
+               "חלמון", "חצב", "צבעון", "בולבוס") to "filter_vintage",
+
+        // Viewpoints / observation towers
+        listOf("תצפית", "נקודת תצפית", "מצפה", "מצפור") to "visibility",
+        listOf("שומרה", "מגדל תצפית", "מגדל שמירה", "מגדל שדה", "מגדל") to "visibility",
+
+        // Danger / warnings
+        listOf("מוקש", "מוקשי", "שדה מוקשים", "אין מעבר", "חסימה", "בורות פתוחים",
+               "מחסום", "תהום", "סכנת", "דרך חסומה", "דרך משובשת",
+               "מעקה שבור", "מזבלה") to "warning",
+
+        // Military sites
+        listOf("בונקר", "מוצב", "מחפורת", "עמדת שמירה") to "flag",
+        listOf("מצודה", "מבצר", "חומה") to "flag",
+
         // Historical / archaeological
-        listOf("חורבה", "חורבת", "שרידים", "שריד", "עתיקות", "אתר עתיקות")                 to "museum",
-        listOf("ארכיאולוג", "ממצאים")                                                        to "museum",
-        listOf("קבר", "מצבה", "קברים", "בית קברות")                                         to "favorite",
-        listOf("אנדרטה", "הנצחה", "יד לחיילים", "מצבת", "אנדרטת")                          to "tour",
-        listOf("מצודה", "מבצר", "מגדל שמירה", "חומה")                                      to "flag",
-        listOf("כנסייה", "קתדרלה", "כנסיה")                                                 to "place",
-        listOf("מסגד")                                                                        to "place",
-        listOf("מקדש", "בית מקדש")                                                           to "place",
-        listOf("בית כנסת", "בית-כנסת")                                                      to "place",
-        // Trails / navigation
-        listOf("שביל", "מסלול", "ניווט", "נקודת התחלה", "נקודת סיום", "צומת שבילים")      to "hiking",
-        // Parks / recreation
-        listOf("פיקניק", "שולחן פיקניק", "שולחנות", "אזור פיקניק")                         to "park",
-        listOf("גן", "פארק", "גינה")                                                         to "park",
+        // "הרוס" is here explicitly (not under terrain) to beat "הר" false-match concern
+        listOf("הרוס", "חורבת", "חורבה", "חרבה", "חירבה", "שרידים", "שרידי",
+               "עתיקות", "אתר עתיקות", "עתיק", "עתיקה") to "museum",
+        listOf("ארכיאולוג", "ממצאים", "מאובנים", "מחצבה",
+               "ציורי סלע", "כתובת", "פסיפס", "קו העתק") to "museum",
+        listOf("תל ") to "museum",  // Tel (archaeological mound) — trailing space avoids mid-word
+        listOf("גת", "כבשן", "בית בד") to "museum",  // wine press, lime kiln, olive press
+        listOf("מטמורה", "מטמורות", "קולומבריום", "כוך", "ספלול", "מאגורה",
+               "מבנה", "מבנה נטוש", "מבנה אבן", "מבנה עתיק") to "museum",
+        listOf("טחנת", "גשר", "גשרון", "טראסות", "מדרגה", "מלכודת") to "museum",  // mill, bridge, terraces
+        listOf("דרך רומית", "דרך עתיקה", "דרך ביזנטית") to "museum",
+
+        // Religious sites — bookmark (not white-dot "place")
+        listOf("מזבח", "פולחן", "בית מקדש") to "bookmark",
+        listOf("כנסייה", "קתדרלה", "כנסיה") to "bookmark",
+        listOf("מסגד") to "bookmark",
+        listOf("מקדש") to "bookmark",
+        listOf("בית כנסת", "בית-כנסת", "כנסת") to "bookmark",  // "כנסת" catches "בית הכנסת"
+
+        // Cemeteries / burial mounds / memorials
+        listOf("טומולי", "טומולוס", "קבר ארגז") to "favorite",  // burial mounds — before generic קבר
+        listOf("קבר", "מצבה", "קברים", "בית קברות", "עלמין", "בית עלמין") to "favorite",
+        listOf("אנדרטה", "הנצחה", "שלט הנצחה", "יד לחיילים", "מצבת", "אנדרטת") to "tour",
+
+        // Gates / entrances (historical)
+        listOf("שער", "כניסה") to "tour",
+
+        // Trails / navigation — split to reduce "walking guy" overuse
+        listOf("נקודת התחלה", "נקודת סיום", "ניווט", "נקודה") to "navigation",
+        listOf("פיצול שבילים", "צומת שבילים", "מפגש שבילים", "מפגש",
+               "פיצול", "צומת", "מסעף") to "near_me",
+        listOf("סימן דרך", "סימן ") to "hiking",  // trail marker/sign
+        listOf("שביל", "מסלול", "תוואי", "נקודת חובה") to "hiking",
+
+        // Parks / recreation areas
+        listOf("פיקניק", "שולחן פיקניק", "שולחנות", "אזור פיקניק", "פינת ישיבה", "בוסתן") to "park",
+        listOf("גן", "פארק", "גינה") to "park",
+
         // Food & drink
-        listOf("מסעדה")                                                                       to "restaurant",
-        listOf("קפה", "בית קפה", "כוס קפה")                                                 to "local_cafe",
+        listOf("מסעדה") to "restaurant",
+        listOf("קפה", "בית קפה") to "local_cafe",
+
         // Services
-        listOf("חניה", "חניון")                                                              to "local_parking",
-        listOf("בית חולים", "קופת חולים", "מרפאה", "מד\"א")                               to "local_hospital",
-        listOf("בית ספר", "אוניברסיטה", "מכללה")                                            to "school",
+        listOf("תחנת דלק", "תדלוק") to "local_gas_station",
+        listOf("חניה", "חניון") to "local_parking",
+        listOf("בית חולים", "קופת חולים", "מרפאה") to "local_hospital",
+        listOf("בית ספר", "אוניברסיטה", "מכללה") to "school",
+
         // Accommodation
-        listOf("מלון", "בית הארחה", "אכסניה")                                               to "hotel",
-        listOf("קמפינג", "אוהל", "קמפ")                                                     to "night_shelter",
+        listOf("מלון", "בית הארחה", "אכסניה") to "hotel",
+        listOf("קמפינג", "אוהל", "קמפ") to "night_shelter",
     )
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -387,17 +445,22 @@ object PoiIconResolver {
      * Returns "place" as fallback.
      */
     fun resolveForImportedName(name: String, desc: String): String {
+        // Strip Unicode directional marks (U+200F RTL, U+200E LTR, U+200B ZWS)
+        // that appear in some GPX exports and break substring matching.
+        fun normalize(s: String) = s.replace("\u200F", "").replace("\u200E", "").replace("\u200B", "")
+
         // Check Hebrew table against name, then desc
-        for (text in listOf(name, desc)) {
-            if (text.isBlank()) continue
+        for (raw in listOf(name, desc)) {
+            if (raw.isBlank()) continue
+            val text = normalize(raw)
             for ((keywords, iconKey) in IMPORT_HEBREW_KEYWORD_TABLE) {
                 if (keywords.any { text.contains(it) }) return iconKey
             }
         }
         // Fall back to English keyword table against name, then desc
-        for (text in listOf(name, desc)) {
-            if (text.isBlank()) continue
-            val lower = text.lowercase()
+        for (raw in listOf(name, desc)) {
+            if (raw.isBlank()) continue
+            val lower = normalize(raw).lowercase()
             for ((keywords, iconKey) in IMPORT_KEYWORD_TABLE) {
                 if (keywords.any { lower.contains(it) }) return iconKey
             }

@@ -104,6 +104,18 @@ private fun createPoiCircle(
 ): Bitmap {
     val bitmap = createCircleIcon(iconKey, source, size = size)
     val androidCanvas = android.graphics.Canvas(bitmap)
+
+    // "place" is a teardrop pin shape — draw a white dot instead for a clean look
+    if (iconKey == "place") {
+        val dotPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            style = android.graphics.Paint.Style.FILL
+        }
+        val cx = size / 2f
+        androidCanvas.drawCircle(cx, cx, size * 0.20f, dotPaint)
+        return bitmap
+    }
+
     val composeCanvas = androidx.compose.ui.graphics.Canvas(androidCanvas)
     val drawScope = CanvasDrawScope()
     val iconSize = size * 0.55f
@@ -429,6 +441,7 @@ fun MapComponent(
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+                            PropertyFactory.iconOpacity(0.9f),
                         )
                     )
                     // Bulk imported POIs layer (above OSM, below Google Places) — circle icons, centered
@@ -439,6 +452,7 @@ fun MapComponent(
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+                            PropertyFactory.iconOpacity(0.9f),
                         )
                     )
                     // Google Places layer (above bulk, below user POIs) — circle icons, centered
@@ -449,6 +463,7 @@ fun MapComponent(
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+                            PropertyFactory.iconOpacity(0.9f),
                         )
                     )
                     style.addLayer(
@@ -457,6 +472,7 @@ fun MapComponent(
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                            PropertyFactory.iconOpacity(0.9f),
                         )
                     )
                     map.addOnMapClickListener { latLng ->

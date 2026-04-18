@@ -97,7 +97,7 @@ private val ICON_BG_COLORS: Map<String, Int> = mapOf(
     "terrain"        to 0xFF558B2F.toInt(),
     "waves"          to 0xFF0288D1.toInt(),
     "water_drop"     to 0xFF0288D1.toInt(),
-    "landscape"      to 0xFF558B2F.toInt(),
+    "landscape"      to 0xFF6D4C41.toInt(),  // brown — caves / canyons
     "nature"         to 0xFF388E3C.toInt(),
     "grass"          to 0xFF388E3C.toInt(),
     "forest"         to 0xFF2E7D32.toInt(),
@@ -126,7 +126,7 @@ private val ICON_BG_COLORS: Map<String, Int> = mapOf(
     "directions_walk"  to 0xFF00897B.toInt(),
     "directions_run"   to 0xFF00897B.toInt(),
     "directions_bike"  to 0xFF00897B.toInt(),
-    "hiking"           to 0xFF558B2F.toInt(),
+    "hiking"           to 0xFFE65100.toInt(),  // deep orange — distinct from terrain green
     "fitness_center"   to 0xFF1565C0.toInt(),
     "pool"             to 0xFF0288D1.toInt(),
     "sailing"          to 0xFF0288D1.toInt(),
