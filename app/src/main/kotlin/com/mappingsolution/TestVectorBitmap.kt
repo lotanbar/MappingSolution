@@ -74,131 +74,141 @@ enum class PoiSource { GOOGLE, OSM, BULK, USER }
 
 /**
  * Background colours keyed by icon key — same icon key as in IconCatalog.
+ * Each IconCatalog category has a distinct colour family:
+ *   Location     → Indigo     (#3949AB)
+ *   Nature       → Forest Green (#2E7D32) — water/snow/sun use semantic sub-colours
+ *   Food & Drink → Warm Red   (#C62828)  — café=brown, bar/wine=wine-red, dessert=pink
+ *   Activities   → Deep Orange (#E65100)  — water sports use blue as semantic exception
+ *   Accommodation→ Deep Purple (#6A1B9A)
+ *   Transport    → Blue-Grey  (#455A64)
+ *   Services     → Teal       (#00695C)
+ *   Entertainment→ Fuchsia    (#AD1457)
+ *   Markers      → Amber/Gold (#F9A825)  — favorite=red, emergency=crimson stay semantic
  * Icons not listed fall back to [DEFAULT_BG].
  */
 private val ICON_BG_COLORS: Map<String, Int> = mapOf(
-    // Location
-    "place"          to 0xFF5C6BC0.toInt(),
-    "location_on"    to 0xFF5C6BC0.toInt(),
-    "my_location"    to 0xFF5C6BC0.toInt(),
-    "explore"        to 0xFF5C6BC0.toInt(),
-    "travel_explore" to 0xFF5C6BC0.toInt(),
-    "navigation"     to 0xFF5C6BC0.toInt(),
+    // ── Location — Indigo ────────────────────────────────────────────────────
+    "place"          to 0xFF3949AB.toInt(),
+    "location_on"    to 0xFF3949AB.toInt(),
+    "my_location"    to 0xFF3949AB.toInt(),
+    "explore"        to 0xFF3F51B5.toInt(),
+    "travel_explore" to 0xFF3F51B5.toInt(),
+    "navigation"     to 0xFF3949AB.toInt(),
     "near_me"        to 0xFF5C6BC0.toInt(),
-    "gps_fixed"      to 0xFF5C6BC0.toInt(),
-    "flag"           to 0xFF5C6BC0.toInt(),
+    "gps_fixed"      to 0xFF3949AB.toInt(),
+    "flag"           to 0xFF3949AB.toInt(),
     "tour"           to 0xFF5C6BC0.toInt(),
-    "map"            to 0xFF5C6BC0.toInt(),
-    "push_pin"       to 0xFF5C6BC0.toInt(),
-    "satellite"      to 0xFF5C6BC0.toInt(),
-    "location_city"  to 0xFF5C6BC0.toInt(),
-    // Nature
+    "map"            to 0xFF3949AB.toInt(),
+    "push_pin"       to 0xFF3949AB.toInt(),
+    "satellite"      to 0xFF283593.toInt(),
+    "location_city"  to 0xFF3949AB.toInt(),
+    // ── Nature — Forest Green (water→blue, sun→amber, snow→blue: semantic) ──
     "park"           to 0xFF388E3C.toInt(),
-    "terrain"        to 0xFF558B2F.toInt(),
-    "waves"          to 0xFF0288D1.toInt(),
-    "water_drop"     to 0xFF0288D1.toInt(),
-    "landscape"      to 0xFF6D4C41.toInt(),  // brown — caves / canyons
-    "nature"         to 0xFF388E3C.toInt(),
+    "terrain"        to 0xFF558B2F.toInt(),  // olive-green: mountain / hill
+    "waves"          to 0xFF0277BD.toInt(),  // blue: water features
+    "water_drop"     to 0xFF0288D1.toInt(),  // blue: springs / water sources
+    "landscape"      to 0xFF6D4C41.toInt(),  // brown: canyon / gorge / terrain layers
+    "nature"         to 0xFF2E7D32.toInt(),
     "grass"          to 0xFF388E3C.toInt(),
-    "forest"         to 0xFF2E7D32.toInt(),
-    "spa"            to 0xFF7B1FA2.toInt(),
-    "filter_vintage" to 0xFF7B1FA2.toInt(),
-    "eco"            to 0xFF388E3C.toInt(),
-    "ac_unit"        to 0xFF0288D1.toInt(),
-    "wb_sunny"       to 0xFFF57F17.toInt(),
+    "forest"         to 0xFF1B5E20.toInt(),
+    "spa"            to 0xFF7B1FA2.toInt(),  // purple: beauty / flowers
+    "filter_vintage" to 0xFF7B1FA2.toInt(),  // purple: wildflowers
+    "eco"            to 0xFF33691E.toInt(),
+    "ac_unit"        to 0xFF0277BD.toInt(),  // blue: glacier / ice / snow
+    "wb_sunny"       to 0xFFF57F17.toInt(),  // amber: sun (semantic)
     "cloud"          to 0xFF607D8B.toInt(),
-    // Food & Drink
-    "restaurant"     to 0xFFE53935.toInt(),
-    "local_cafe"     to 0xFF795548.toInt(),
-    "local_bar"      to 0xFFAD1457.toInt(),
-    "fastfood"       to 0xFFE53935.toInt(),
-    "lunch_dining"   to 0xFFE53935.toInt(),
-    "dinner_dining"  to 0xFFE53935.toInt(),
-    "brunch_dining"  to 0xFFE53935.toInt(),
-    "bakery_dining"  to 0xFFBF360C.toInt(),
-    "ramen_dining"   to 0xFFE53935.toInt(),
-    "local_pizza"    to 0xFFE53935.toInt(),
-    "icecream"       to 0xFFEC407A.toInt(),
-    "cake"           to 0xFFEC407A.toInt(),
-    "wine_bar"       to 0xFFAD1457.toInt(),
-    "coffee"         to 0xFF795548.toInt(),
-    // Activities
-    "directions_walk"  to 0xFF00897B.toInt(),
-    "directions_run"   to 0xFF00897B.toInt(),
-    "directions_bike"  to 0xFF00897B.toInt(),
-    "hiking"           to 0xFFE65100.toInt(),  // deep orange — distinct from terrain green
-    "fitness_center"   to 0xFF1565C0.toInt(),
-    "pool"             to 0xFF0288D1.toInt(),
-    "sailing"          to 0xFF0288D1.toInt(),
-    "kayaking"         to 0xFF0288D1.toInt(),
-    "snowboarding"     to 0xFF0288D1.toInt(),
-    "downhill_skiing"  to 0xFF0288D1.toInt(),
-    "surfing"          to 0xFF0288D1.toInt(),
-    "sports_soccer"    to 0xFF2E7D32.toInt(),
+    // ── Food & Drink — Warm Red ──────────────────────────────────────────────
+    "restaurant"     to 0xFFC62828.toInt(),
+    "local_cafe"     to 0xFF6D4C41.toInt(),  // brown: coffee / café
+    "local_bar"      to 0xFF880E4F.toInt(),  // wine-red: bar / pub
+    "fastfood"       to 0xFFD32F2F.toInt(),
+    "lunch_dining"   to 0xFFC62828.toInt(),
+    "dinner_dining"  to 0xFFB71C1C.toInt(),
+    "brunch_dining"  to 0xFFC62828.toInt(),
+    "bakery_dining"  to 0xFFBF360C.toInt(),  // dark orange-red: baked goods / oven
+    "ramen_dining"   to 0xFFD32F2F.toInt(),
+    "local_pizza"    to 0xFFD32F2F.toInt(),
+    "icecream"       to 0xFFE91E63.toInt(),  // pink: ice cream / sweets
+    "cake"           to 0xFFE91E63.toInt(),  // pink: cake / dessert
+    "wine_bar"       to 0xFF880E4F.toInt(),  // wine-red: wine
+    "coffee"         to 0xFF6D4C41.toInt(),  // brown: coffee
+    // ── Activities — Deep Orange (water sports→blue: semantic exception) ────
+    "directions_walk"   to 0xFFE65100.toInt(),
+    "directions_run"    to 0xFFE65100.toInt(),
+    "directions_bike"   to 0xFFBF360C.toInt(),
+    "hiking"            to 0xFFE65100.toInt(),
+    "fitness_center"    to 0xFFF4511E.toInt(),
+    "pool"              to 0xFF0277BD.toInt(),  // blue: swimming pool / water
+    "sailing"           to 0xFF0277BD.toInt(),  // blue: on-water sport
+    "kayaking"          to 0xFF01579B.toInt(),  // dark blue: paddling
+    "snowboarding"      to 0xFF0277BD.toInt(),  // blue: snow / ice
+    "downhill_skiing"   to 0xFF0277BD.toInt(),  // blue: snow / ice
+    "surfing"           to 0xFF0277BD.toInt(),  // blue: ocean waves
+    "sports_soccer"     to 0xFFBF360C.toInt(),
     "sports_basketball" to 0xFFE65100.toInt(),
-    "golf_course"      to 0xFF388E3C.toInt(),
-    "paragliding"      to 0xFF1565C0.toInt(),
-    // Accommodation
+    "golf_course"       to 0xFF558B2F.toInt(),  // olive-green: golf fairway
+    "paragliding"       to 0xFFE65100.toInt(),
+    // ── Accommodation — Deep Purple ──────────────────────────────────────────
     "hotel"          to 0xFF6A1B9A.toInt(),
-    "home"           to 0xFF1565C0.toInt(),
-    "apartment"      to 0xFF1565C0.toInt(),
-    "house"          to 0xFF1565C0.toInt(),
-    "night_shelter"  to 0xFF6A1B9A.toInt(),
-    "beach_access"   to 0xFF0288D1.toInt(),
+    "home"           to 0xFF7B1FA2.toInt(),
+    "apartment"      to 0xFF6A1B9A.toInt(),
+    "house"          to 0xFF7B1FA2.toInt(),
+    "night_shelter"  to 0xFF4A148C.toInt(),
+    "beach_access"   to 0xFF6A1B9A.toInt(),
     "king_bed"       to 0xFF6A1B9A.toInt(),
-    "single_bed"     to 0xFF6A1B9A.toInt(),
-    "meeting_room"   to 0xFF1565C0.toInt(),
-    // Transport
+    "single_bed"     to 0xFF7B1FA2.toInt(),
+    "meeting_room"   to 0xFF4A148C.toInt(),
+    // ── Transport — Blue-Grey ────────────────────────────────────────────────
     "directions_car"  to 0xFF455A64.toInt(),
-    "directions_bus"  to 0xFF455A64.toInt(),
-    "train"           to 0xFF455A64.toInt(),
-    "flight"          to 0xFF1565C0.toInt(),
-    "motorcycle"      to 0xFF455A64.toInt(),
-    "two_wheeler"     to 0xFF455A64.toInt(),
-    "electric_car"    to 0xFF00897B.toInt(),
-    "directions_boat" to 0xFF0288D1.toInt(),
-    "anchor"          to 0xFF0288D1.toInt(),
-    "local_taxi"      to 0xFFF57F17.toInt(),
-    "tram"            to 0xFF455A64.toInt(),
-    // Services
-    "local_hospital"        to 0xFFE53935.toInt(),
-    "local_pharmacy"        to 0xFF2E7D32.toInt(),
-    "local_gas_station"     to 0xFF455A64.toInt(),
-    "local_parking"         to 0xFF1565C0.toInt(),
+    "directions_bus"  to 0xFF546E7A.toInt(),
+    "train"           to 0xFF37474F.toInt(),
+    "flight"          to 0xFF455A64.toInt(),
+    "motorcycle"      to 0xFF546E7A.toInt(),
+    "two_wheeler"     to 0xFF546E7A.toInt(),
+    "electric_car"    to 0xFF37474F.toInt(),
+    "directions_boat" to 0xFF455A64.toInt(),
+    "anchor"          to 0xFF37474F.toInt(),
+    "local_taxi"      to 0xFF455A64.toInt(),
+    "tram"            to 0xFF546E7A.toInt(),
+    // ── Services — Teal ──────────────────────────────────────────────────────
+    "local_hospital"        to 0xFF00695C.toInt(),
+    "local_pharmacy"        to 0xFF00796B.toInt(),
+    "local_gas_station"     to 0xFF00695C.toInt(),
+    "local_parking"         to 0xFF00796B.toInt(),
     "shopping_cart"         to 0xFF00897B.toInt(),
     "storefront"            to 0xFF00897B.toInt(),
-    "local_atm"             to 0xFF1B5E20.toInt(),
-    "account_balance"       to 0xFF1B5E20.toInt(),
-    "school"                to 0xFFF57F17.toInt(),
-    "local_police"          to 0xFF1A237E.toInt(),
-    "local_fire_department" to 0xFFB71C1C.toInt(),
-    "local_laundry"         to 0xFF455A64.toInt(),
-    // Entertainment
-    "museum"          to 0xFF6A1B9A.toInt(),
-    "music_note"      to 0xFFAD1457.toInt(),
-    "nightlife"       to 0xFF6A1B9A.toInt(),
-    "theaters"        to 0xFF6A1B9A.toInt(),
-    "casino"          to 0xFF1B5E20.toInt(),
+    "local_atm"             to 0xFF00695C.toInt(),
+    "account_balance"       to 0xFF004D40.toInt(),
+    "school"                to 0xFF00796B.toInt(),
+    "local_police"          to 0xFF004D40.toInt(),
+    "local_fire_department" to 0xFF00695C.toInt(),
+    "local_laundry"         to 0xFF00897B.toInt(),
+    // ── Entertainment — Fuchsia / Pink ───────────────────────────────────────
+    "museum"          to 0xFFAD1457.toInt(),
+    "music_note"      to 0xFFE91E63.toInt(),
+    "nightlife"       to 0xFF880E4F.toInt(),
+    "theaters"        to 0xFFAD1457.toInt(),
+    "casino"          to 0xFF880E4F.toInt(),
     "sports_bar"      to 0xFFAD1457.toInt(),
-    "sports_esports"  to 0xFF1565C0.toInt(),
-    "photo_camera"    to 0xFF455A64.toInt(),
-    "attractions"     to 0xFFE65100.toInt(),
-    // Markers
-    "star"            to 0xFFF57F17.toInt(),
-    "favorite"        to 0xFFE53935.toInt(),
-    "bookmark"        to 0xFF1565C0.toInt(),
-    "label"           to 0xFF455A64.toInt(),
-    "warning"         to 0xFFF57F17.toInt(),
-    "info"            to 0xFF1565C0.toInt(),
-    "emergency"       to 0xFFB71C1C.toInt(),
-    "whatshot"        to 0xFFE65100.toInt(),
-    "bolt"            to 0xFFF57F17.toInt(),
-    "visibility"      to 0xFF1565C0.toInt(),
-    "work"            to 0xFF455A64.toInt(),
-    "business_center" to 0xFF455A64.toInt(),
+    "sports_esports"  to 0xFFE91E63.toInt(),
+    "photo_camera"    to 0xFFAD1457.toInt(),
+    "attractions"     to 0xFFE91E63.toInt(),
+    // ── Markers — Amber / Gold ───────────────────────────────────────────────
+    "star"            to 0xFFF9A825.toInt(),
+    "favorite"        to 0xFFE53935.toInt(),  // red: heart / memorial — semantic
+    "bookmark"        to 0xFFF9A825.toInt(),
+    "label"           to 0xFFF57F17.toInt(),
+    "warning"         to 0xFFF9A825.toInt(),
+    "info"            to 0xFFFFB300.toInt(),
+    "emergency"       to 0xFFB71C1C.toInt(),  // crimson: danger — semantic
+    "whatshot"        to 0xFFF57F17.toInt(),
+    "bolt"            to 0xFFF9A825.toInt(),
+    "visibility"      to 0xFFFFB300.toInt(),
+    "work"            to 0xFFF57F17.toInt(),
+    "business_center" to 0xFFF57F17.toInt(),
 )
 
-private val DEFAULT_BG = 0xFF5C6BC0.toInt()
+private val DEFAULT_BG = 0xFF3949AB.toInt()
 
 // Google brand sweep gradient colours — kept for potential future use
 private val GOOGLE_GRADIENT_COLORS = intArrayOf(

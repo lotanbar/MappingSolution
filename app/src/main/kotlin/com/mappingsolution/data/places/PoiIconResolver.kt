@@ -94,7 +94,7 @@ object PoiIconResolver {
     private val OSM_NATURAL_TO_ICON = mapOf(
         "peak"           to "terrain",
         "volcano"        to "terrain",
-        "cave_entrance"  to "landscape",
+        "cave_entrance"  to "explore",
         "waterfall"      to "waves",
         "glacier"        to "ac_unit",
         "hot_spring"     to "water_drop",
@@ -196,68 +196,154 @@ object PoiIconResolver {
     // Each entry: list of keywords → iconKey. First substring match wins.
 
     private val IMPORT_KEYWORD_TABLE: List<Pair<List<String>, String>> = listOf(
-        listOf("beach", "shore", "coast", "seaside")                                  to "beach_access",
-        listOf("mountain", "peak", "summit", "hill", "ridge", "cliff", "highland")    to "terrain",
-        listOf("waterfall", "cascade", "rapids")                                      to "waves",
-        listOf("cave", "cavern", "grotto")                                            to "landscape",
-        listOf("glacier", "icefield")                                                 to "ac_unit",
-        listOf("hot spring", "thermal", "geyser")                                     to "water_drop",
-        listOf("volcano")                                                              to "terrain",
-        listOf("viewpoint", "overlook", "lookout", "vista", "panorama", "scenic")    to "visibility",
-        listOf("lighthouse")                                                           to "anchor",
-        listOf("castle", "fort", "fortress", "citadel")                              to "flag",
-        listOf("ruin", "ruins", "ancient", "archaeological", "archaeology")           to "museum",
-        listOf("monument", "obelisk", "landmark", "pillar")                          to "tour",
-        listOf("memorial", "grave", "cemetery", "tombstone", "mausoleum")            to "favorite",
-        listOf("statue", "sculpture")                                                 to "attractions",
-        listOf("museum", "gallery", "exhibit", "exhibition")                         to "museum",
-        listOf("church", "cathedral", "chapel", "mosque", "temple", "synagogue", "shrine") to "bookmark",
-        listOf("restaurant", "diner", "eatery", "bistro", "grill")                   to "restaurant",
-        listOf("cafe", "coffee", "espresso")                                          to "local_cafe",
-        listOf("bar", "pub", "tavern", "brewery", "saloon")                          to "local_bar",
-        listOf("bakery", "pastry")                                                    to "bakery_dining",
-        listOf("fast food", "fastfood", "burger", "pizza", "sandwich")               to "fastfood",
-        listOf("hotel", "motel", "inn", "resort", "lodge", "accommodation")          to "hotel",
-        listOf("hostel", "campsite", "camp", "tent")                                 to "night_shelter",
-        listOf("hospital", "clinic", "medical", "health center")                     to "local_hospital",
-        listOf("pharmacy", "drugstore", "chemist")                                   to "local_pharmacy",
-        listOf("school", "university", "college", "academy", "campus")               to "school",
-        listOf("park", "garden", "playground")                                       to "park",
-        listOf("forest", "woods", "woodland", "jungle")                              to "forest",
-        listOf("nature", "reserve", "wildlife", "sanctuary", "habitat")              to "nature",
-        listOf("observatory")                                                         to "satellite",
-        listOf("gas", "fuel", "petrol", "diesel", "refuel")                          to "local_gas_station",
-        listOf("parking", "car park")                                                to "local_parking",
-        listOf("atm", "cash machine")                                                to "local_atm",
-        listOf("bank", "finance", "credit union")                                    to "account_balance",
-        listOf("shop", "store", "market", "mall", "shopping", "supermarket")        to "storefront",
-        listOf("airport", "terminal", "aviation", "airfield")                       to "flight",
-        listOf("train", "railway", "station", "rail")                               to "train",
-        listOf("bus", "transit", "stop")                                             to "directions_bus",
-        listOf("taxi", "cab")                                                        to "local_taxi",
-        listOf("marina", "port", "harbor", "harbour", "dock", "pier", "jetty")      to "anchor",
-        listOf("ski", "skiing", "snowboard", "slope", "piste")                      to "downhill_skiing",
-        listOf("golf")                                                               to "golf_course",
-        listOf("gym", "fitness", "workout", "crossfit")                             to "fitness_center",
-        listOf("swimming", "pool", "aquatic")                                       to "pool",
-        listOf("surfing", "surf", "wave")                                           to "surfing",
-        listOf("kayak", "canoe", "rafting")                                         to "kayaking",
-        listOf("sailing", "yacht")                                                  to "sailing",
-        listOf("paragliding", "hang gliding", "gliding")                           to "paragliding",
-        listOf("trail start", "trail end", "trailhead", "waypoint", "navigation point") to "navigation",
-        listOf("trail junction", "trail fork", "intersection", "crossroads")          to "near_me",
-        listOf("hiking", "trail", "trekking", "trek", "walk path")                   to "hiking",
-        listOf("cycling", "bicycle", "bike")                                        to "directions_bike",
-        listOf("fire station", "firehouse")                                         to "local_fire_department",
-        listOf("police", "security", "law enforcement")                             to "local_police",
-        listOf("concert", "music", "venue")                                         to "music_note",
-        listOf("theater", "theatre", "cinema", "movie")                            to "theaters",
-        listOf("nightclub", "club", "disco", "lounge")                             to "nightlife",
-        listOf("casino", "gambling")                                               to "casino",
-        listOf("stadium", "arena", "sports complex")                               to "sports_soccer",
-        listOf("home", "house", "residence", "villa")                              to "home",
-        listOf("apartment", "flat", "building", "office")                          to "apartment",
-        listOf("laundry", "dry clean")                                             to "local_laundry",
+        // ── Precise food sub-types (before generic restaurant) ───────────────
+        listOf("sushi", "japanese restaurant", "ramen", "noodle", "dumpling", "dim sum", "udon", "pho") to "ramen_dining",
+        listOf("pizza")                                                              to "local_pizza",
+        listOf("ice cream", "icecream", "gelato", "frozen yogurt", "sorbet")        to "icecream",
+        listOf("cake", "dessert", "pastry", "patisserie", "sweets", "confection")   to "cake",
+        listOf("bakery", "boulangerie", "bread")                                    to "bakery_dining",
+        listOf("wine bar", "winery", "vineyard", "cellar")                          to "wine_bar",
+        listOf("coffee", "espresso", "cappuccino", "latte", "barista")              to "coffee",
+        listOf("cafe", "bistro cafe", "tea house", "tea room", "tearoom")           to "local_cafe",
+        listOf("bar", "pub", "tavern", "brewery", "saloon", "taproom", "alehouse")  to "local_bar",
+        listOf("fast food", "fastfood", "burger", "sandwich", "kebab", "shawarma",
+               "falafel", "taco", "burrito", "wrap", "hot dog", "chips")            to "fastfood",
+        listOf("steakhouse", "steak", "bbq", "barbeque", "barbecue", "grill",
+               "seafood", "fish restaurant", "sushi restaurant")                    to "restaurant",
+        listOf("restaurant", "diner", "eatery", "bistro", "buffet", "brasserie",
+               "trattoria", "osteria", "cantina", "taverna", "tapas", "mezze")      to "restaurant",
+        // ── Beach / coast ────────────────────────────────────────────────────
+        listOf("beach", "shore", "coast", "seaside", "coastline", "bay")            to "beach_access",
+        // ── Mountain / terrain (ridge & slope fall back to terrain icon) ─────
+        listOf("mountain peak", "summit", "mountain top", "mountaintop")            to "terrain",
+        listOf("volcano", "volcanic")                                                to "terrain",
+        listOf("mountain", "peak", "hill", "ridge", "cliff", "highland",
+               "escarpment", "slope", "bluff", "butte", "mesa")                    to "terrain",
+        // ── Canyon / gorge / valley (landscape icon = terrain layers) ────────
+        listOf("canyon", "gorge", "ravine", "gully", "chasm")                       to "landscape",
+        listOf("valley", "vale", "dale", "glen")                                    to "landscape",
+        // ── Cave / cavern (explore = discovery/exploration) ──────────────────
+        listOf("cave", "cavern", "grotto", "spelunking", "cave entrance")           to "explore",
+        // ── Water features ───────────────────────────────────────────────────
+        listOf("waterfall", "cascade", "rapids", "cataract")                        to "waves",
+        listOf("river", "stream", "creek", "brook", "wadi", "torrent")             to "waves",
+        listOf("lake", "pond", "lagoon", "reservoir", "tarn")                      to "pool",
+        listOf("glacier", "icefield", "ice cap", "snowfield")                       to "ac_unit",
+        listOf("hot spring", "thermal spring", "thermal bath", "geyser")            to "water_drop",
+        listOf("spring", "well", "cistern", "water source", "fountain")             to "water_drop",
+        // ── Wetland / meadow / open land ─────────────────────────────────────
+        listOf("wetland", "marsh", "swamp", "bog", "fen", "mangrove")               to "nature",
+        listOf("meadow", "prairie", "steppe", "savanna", "heath", "moor")           to "nature",
+        // ── Viewpoint ────────────────────────────────────────────────────────
+        listOf("viewpoint", "overlook", "lookout", "vista", "panorama", "scenic",
+               "belvedere", "mirador", "observation deck", "observation point",
+               "observation tower", "panoramic point")                              to "visibility",
+        // ── Lighthouse ───────────────────────────────────────────────────────
+        listOf("lighthouse", "light house")                                          to "anchor",
+        // ── Historical / archaeological ───────────────────────────────────────
+        listOf("castle", "fort", "fortress", "citadel", "stronghold", "rampart",
+               "battlement", "bastion", "keep", "tower house")                     to "flag",
+        listOf("ruin", "ruins", "ancient", "archaeological", "archaeology",
+               "excavation", "dig site", "historic site", "heritage site",
+               "aqueduct", "watermill", "mill", "bridge historic",
+               "roman road", "ancient road", "byzantine")                           to "museum",
+        listOf("monument", "obelisk", "landmark", "pillar", "column", "statue",
+               "sculpture", "memorial gate", "arch", "triumphal arch")             to "tour",
+        listOf("memorial", "grave", "cemetery", "tombstone", "mausoleum",
+               "burial", "tomb", "catacomb", "necropolis", "cenotaph")             to "favorite",
+        // ── Religious sites ───────────────────────────────────────────────────
+        listOf("church", "cathedral", "chapel", "basilica",
+               "mosque", "minaret",
+               "temple", "synagogue", "shrine", "shrine",
+               "monastery", "abbey", "convent", "priory",
+               "pilgrimage", "holy site", "place of worship")                      to "bookmark",
+        // ── Museum / gallery ──────────────────────────────────────────────────
+        listOf("museum", "gallery", "art gallery", "exhibit", "exhibition",
+               "science center", "planetarium")                                     to "museum",
+        // ── Accommodation ────────────────────────────────────────────────────
+        listOf("hotel", "motel", "inn", "resort", "lodge", "accommodation",
+               "guesthouse", "guest house", "pension", "chalet", "cottage",
+               "b&b", "bed and breakfast", "hostal", "pousada")                    to "hotel",
+        listOf("hostel", "campsite", "camp site", "camp ground", "camping",
+               "caravan", "glamping", "tent", "bivouac", "hut", "alpine hut",
+               "wilderness hut", "refuge", "bothy")                                to "night_shelter",
+        listOf("home", "house", "residence", "villa", "farmhouse")                 to "home",
+        listOf("apartment", "flat", "condominium")                                  to "apartment",
+        // ── Health / Medical ──────────────────────────────────────────────────
+        listOf("hospital", "clinic", "medical center", "health center",
+               "urgent care", "emergency room")                                     to "local_hospital",
+        listOf("pharmacy", "drugstore", "chemist", "apothecary")                   to "local_pharmacy",
+        // ── Education ────────────────────────────────────────────────────────
+        listOf("school", "university", "college", "academy", "campus",
+               "kindergarten", "high school", "elementary school")                 to "school",
+        // ── Nature / parks ───────────────────────────────────────────────────
+        listOf("national park", "nature reserve", "wildlife reserve",
+               "nature sanctuary", "wildlife sanctuary", "habitat",
+               "nature area", "ecological")                                         to "nature",
+        listOf("forest", "woods", "woodland", "jungle", "rainforest", "grove")     to "forest",
+        listOf("park", "city park", "garden", "botanical garden", "playground",
+               "recreation area", "picnic")                                         to "park",
+        // ── Observatory ──────────────────────────────────────────────────────
+        listOf("observatory", "telescope", "astronomy")                             to "satellite",
+        // ── Services ─────────────────────────────────────────────────────────
+        listOf("gas station", "petrol station", "fuel station", "gas", "fuel",
+               "petrol", "diesel", "refuel", "filling station")                    to "local_gas_station",
+        listOf("parking", "car park", "parking lot", "garage parking")             to "local_parking",
+        listOf("atm", "cash machine", "cash point")                                to "local_atm",
+        listOf("bank", "finance", "credit union", "savings bank")                  to "account_balance",
+        listOf("supermarket", "grocery", "market", "mall", "shopping center",
+               "shop", "store", "boutique", "shopping")                            to "shopping_cart",
+        listOf("laundry", "dry clean", "dry cleaner", "laundromat")                to "local_laundry",
+        // ── Transport ────────────────────────────────────────────────────────
+        listOf("airport", "terminal", "aviation", "airfield", "airstrip")          to "flight",
+        listOf("train station", "railway station", "rail station",
+               "train", "railway", "rail", "metro station", "subway station")      to "train",
+        listOf("bus station", "bus stop", "bus terminal", "transit hub",
+               "bus", "transit")                                                    to "directions_bus",
+        listOf("taxi", "cab", "rideshare")                                          to "local_taxi",
+        listOf("marina", "port", "harbor", "harbour", "dock", "pier",
+               "jetty", "wharf", "ferry terminal", "boat dock")                    to "anchor",
+        // ── Activities / sport ────────────────────────────────────────────────
+        listOf("skiing", "ski resort", "ski slope", "piste", "ski run",
+               "ski lift", "chairlift", "snowboard")                               to "downhill_skiing",
+        listOf("golf course", "golf club", "golf")                                  to "golf_course",
+        listOf("swimming", "swimming pool", "aquatic center", "lido")               to "pool",
+        listOf("surfing", "surf spot", "surf break")                                to "surfing",
+        listOf("kayak", "kayaking", "canoe", "canoeing", "rafting",
+               "white water", "whitewater")                                         to "kayaking",
+        listOf("sailing", "yacht", "yachting", "regatta")                          to "sailing",
+        listOf("paragliding", "hang gliding", "gliding", "paraglider launch")      to "paragliding",
+        listOf("gym", "fitness", "fitness center", "workout", "crossfit",
+               "yoga", "pilates", "aerobics", "spin", "weightlifting")             to "fitness_center",
+        listOf("climbing", "bouldering", "rock climbing", "via ferrata",
+               "climbing wall", "crag")                                             to "hiking",
+        listOf("tennis", "volleyball", "basketball court", "football pitch",
+               "baseball", "rugby", "cricket", "badminton", "squash")             to "sports_soccer",
+        listOf("stadium", "arena", "sports complex", "sports center",
+               "sports hall")                                                       to "sports_soccer",
+        listOf("fishing", "angling", "fish")                                        to "sailing",
+        // ── Trail navigation ──────────────────────────────────────────────────
+        listOf("trailhead", "trail start", "trail end", "trail head",
+               "start point", "end point", "navigation point")                     to "navigation",
+        listOf("trail junction", "trail fork", "trail split", "intersection",
+               "crossroads", "junction")                                            to "near_me",
+        listOf("hiking", "trail", "trekking", "trek", "walk path",
+               "footpath", "walking route", "long distance trail",
+               "waymark", "waymarked")                                              to "hiking",
+        listOf("cycling route", "bike path", "bicycle route",
+               "cycling", "bicycle", "bike")                                       to "directions_bike",
+        // ── Emergency services ────────────────────────────────────────────────
+        listOf("fire station", "fire department", "firehouse")                      to "local_fire_department",
+        listOf("police", "police station", "law enforcement", "security post")      to "local_police",
+        // ── Entertainment ─────────────────────────────────────────────────────
+        listOf("concert", "concert hall", "music venue", "music")                  to "music_note",
+        listOf("theater", "theatre", "cinema", "movie", "movie theater",
+               "film", "opera house", "opera", "playhouse")                        to "theaters",
+        listOf("nightclub", "night club", "club", "disco", "lounge",
+               "cocktail bar")                                                      to "nightlife",
+        listOf("casino", "gambling")                                                to "casino",
+        // ── Building / office ─────────────────────────────────────────────────
+        listOf("building", "office", "office building")                             to "apartment",
     )
 
     // ── Imported GPX fuzzy keyword table — Hebrew ────────────────────────────
@@ -269,10 +355,14 @@ object PoiIconResolver {
         listOf("מערת קבורה", "מערת קבר", "מערות קבורה", "מערת קבורות") to "favorite",
 
         // Terrain / topography
-        // NOTE: "הר" alone EXCLUDED — it is a substring of "הרוס" (ruins) and "נהר" (river)
-        listOf("פסגה", "מצוק", "גבעה", "ראש ההר", "ראש", "מעלה", "מורד", "רכס", "גב הר", "גב") to "terrain",
+        // NOTE: standalone "ראש" EXCLUDED — it is too generic (appears in "ראש העין" etc.)
+        // NOTE: standalone "גב" EXCLUDED — too generic (suffix/prefix in many unrelated words)
+        // NOTE: "מעלה"/"מורד" moved to hiking (trail ascent/descent markers, not mountain tops)
+        listOf("פסגה", "מצוק", "גבעה", "ראש ההר", "ראש הר", "רכס", "גב הר", "כיפה") to "terrain",
         listOf("מעבר", "צוואר", "אוכף") to "navigation",
-        listOf("עמק", "גיא", "קניון") to "landscape",
+
+        // Canyon / gorge / valley
+        listOf("עמק", "גיא", "קניון", "ערוץ", "תהום") to "landscape",
 
         // Water features
         listOf("מפל", "מפלים", "מפלון") to "waves",
@@ -281,7 +371,6 @@ object PoiIconResolver {
         listOf("סכר") to "waves",  // dam / weir
         // NOTE: "ים" alone EXCLUDED — it is the Hebrew plural suffix (שרידים, קברים, etc.)
         listOf("חוף ים", "חוף הים", "חוף", "ים המלח", "כנרת", "ים סוף") to "beach_access",
-        // "בור" alone catches cisterns: בור פעמון, בור סיד, בור חצוב, etc.
         listOf("מעיין", "מעין", "עין", "גבים", "נביעה",
                "בור מים", "בריכת מים", "בריכת", "בורות מים", "בורות",
                "בור", "באר", "באר מים", "מאגר מים", "ברז מים", "ציר מים",
@@ -289,8 +378,8 @@ object PoiIconResolver {
         listOf("אגם", "ברכה", "בריכה", "בריכת חורף", "שלולית") to "pool",
         listOf("ביצה", "אזור לח") to "nature",
 
-        // Caves — after burial cave entry; "מערת" catches construct form (מערת התאנה etc.)
-        listOf("מערה", "מחילה", "נקיק", "מערות", "מערת", "מערונת", "פתח מערה") to "landscape",
+        // Caves — after burial cave entry; now mapped to explore (not landscape)
+        listOf("מערה", "מחילה", "נקיק", "מערות", "מערת", "מערונת", "פתח מערה") to "explore",
 
         // Flora / trees / flowers
         listOf("יער", "חורש", "שיטה", "שיטים", "אורן", "שיזף", "אלה", "חרוב",
@@ -306,7 +395,7 @@ object PoiIconResolver {
 
         // Danger / warnings
         listOf("מוקש", "מוקשי", "שדה מוקשים", "אין מעבר", "חסימה", "בורות פתוחים",
-               "מחסום", "תהום", "סכנת", "דרך חסומה", "דרך משובשת",
+               "מחסום", "סכנת", "דרך חסומה", "דרך משובשת",
                "מעקה שבור", "מזבלה") to "warning",
 
         // Military sites
@@ -341,12 +430,12 @@ object PoiIconResolver {
         // Gates / entrances (historical)
         listOf("שער", "כניסה") to "tour",
 
-        // Trails / navigation — split to reduce "walking guy" overuse
+        // Trails / navigation — "מעלה"/"מורד" moved here (trail ascent/descent, not mountain tops)
         listOf("נקודת התחלה", "נקודת סיום", "ניווט", "נקודה") to "navigation",
         listOf("פיצול שבילים", "צומת שבילים", "מפגש שבילים", "מפגש",
                "פיצול", "צומת", "מסעף") to "near_me",
         listOf("סימן דרך", "סימן ") to "hiking",  // trail marker/sign
-        listOf("שביל", "מסלול", "תוואי", "נקודת חובה") to "hiking",
+        listOf("שביל", "מסלול", "תוואי", "נקודת חובה", "מעלה", "מורד") to "hiking",
 
         // Parks / recreation areas
         listOf("פיקניק", "שולחן פיקניק", "שולחנות", "אזור פיקניק", "פינת ישיבה", "בוסתן") to "park",
@@ -355,12 +444,15 @@ object PoiIconResolver {
         // Food & drink
         listOf("מסעדה") to "restaurant",
         listOf("קפה", "בית קפה") to "local_cafe",
+        listOf("מאפייה", "פלאפל", "שווארמה", "המבורגר") to "fastfood",
 
         // Services
         listOf("תחנת דלק", "תדלוק") to "local_gas_station",
         listOf("חניה", "חניון") to "local_parking",
         listOf("בית חולים", "קופת חולים", "מרפאה") to "local_hospital",
         listOf("בית ספר", "אוניברסיטה", "מכללה") to "school",
+        listOf("בנק", "כספומט") to "account_balance",
+        listOf("מרכול", "סופרמרקט", "קניון", "חנות") to "shopping_cart",
 
         // Accommodation
         listOf("מלון", "בית הארחה", "אכסניה") to "hotel",
