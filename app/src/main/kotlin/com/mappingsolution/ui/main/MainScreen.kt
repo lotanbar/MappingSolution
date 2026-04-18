@@ -105,6 +105,14 @@ fun MainScreen(
     var showBatteryDialog by remember { mutableStateOf(false) }
     var flyToTarget by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
+    // Reset flyToTarget to null after each use so repeated requests always trigger the LaunchedEffect
+    LaunchedEffect(flyToTarget) {
+        if (flyToTarget != null) {
+            kotlinx.coroutines.delay(500)
+            flyToTarget = null
+        }
+    }
+
     // Monitor location services while a recording is in progress
     DisposableEffect(recordingState) {
         if (recordingState !is RecordingState.Active) return@DisposableEffect onDispose { }
@@ -345,6 +353,17 @@ fun MainScreen(
                             viewModel.mapHolder.unregister()
                         }
                     },
+                    onDoubleTap = {
+                        if (!isLocationEnabled(context)) {
+                            locationServicesDisabled = true
+                        } else {
+                            scope.launch {
+                                val loc = withTimeoutOrNull(10_000L) { fetchCurrentLocation(context) }
+                                if (loc != null) flyToTarget = loc
+                                else locationError = "Could not get a GPS fix. Try moving outdoors or waiting a moment."
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (mapError != null) {
@@ -392,17 +411,6 @@ fun MainScreen(
                 }
             }
             BottomActionPanel(
-                onFlyToLocation = {
-                    if (!isLocationEnabled(context)) {
-                        locationServicesDisabled = true
-                    } else {
-                        scope.launch {
-                            val loc = withTimeoutOrNull(10_000L) { fetchCurrentLocation(context) }
-                            if (loc != null) flyToTarget = loc
-                            else locationError = "Could not get a GPS fix. Try moving outdoors or waiting a moment."
-                        }
-                    }
-                },
                 onAddPoi = {
                     val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION

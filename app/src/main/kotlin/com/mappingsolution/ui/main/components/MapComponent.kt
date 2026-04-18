@@ -157,6 +157,7 @@ fun MapComponent(
     onMapReady: (MapLibreMap) -> Unit = {},
     onMapDisposed: () -> Unit = {},
     onMapError: (String) -> Unit = {},
+    onDoubleTap: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -170,6 +171,7 @@ fun MapComponent(
     val onBulkPoiTappedRef = rememberUpdatedState(onBulkPoiTapped)
     val onCameraIdleRef = rememberUpdatedState(onCameraIdle)
     val onBoundsChangedRef = rememberUpdatedState(onBoundsChanged)
+    val onDoubleTapRef = rememberUpdatedState(onDoubleTap)
 
     MapLibre.getInstance(context)
 
@@ -201,7 +203,13 @@ fun MapComponent(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START   -> mapView.onStart()
-                Lifecycle.Event.ON_RESUME  -> mapView.onResume()
+                Lifecycle.Event.ON_RESUME  -> {
+                    mapView.onResume()
+                    // Re-enable LocationComponent sensors on every resume (handles both the
+                    // initial case where activation happens after onResume, and future app resumes)
+                    mapState.value?.locationComponent?.takeIf { it.isLocationComponentActivated }
+                        ?.let { it.isLocationComponentEnabled = true }
+                }
                 Lifecycle.Event.ON_PAUSE   -> mapView.onPause()
                 Lifecycle.Event.ON_STOP    -> mapView.onStop()
                 Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
@@ -275,7 +283,7 @@ fun MapComponent(
             .zoom(17.0)
             .bearing(0.0)
             .build()
-        map.animateCamera(CameraUpdateFactory.newCameraPosition(camera))
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(camera), 1200)
     }
 
     // Re-render saved route polylines whenever routes/points/visibility change
@@ -405,12 +413,27 @@ fun MapComponent(
 
     AndroidView(
         factory = {
+            val gestureDetector = android.view.GestureDetector(
+                context,
+                object : android.view.GestureDetector.SimpleOnGestureListener() {
+                    override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+                        onDoubleTapRef.value()
+                        return true
+                    }
+                }
+            )
+            mapView.setOnTouchListener { _, event ->
+                gestureDetector.onTouchEvent(event)
+                false
+            }
             mapView.addOnDidFailLoadingMapListener {
                 onMapErrorRef.value("Map failed to load. Check your API key or connection.")
             }
             mapView.getMapAsync { map ->
                 mapState.value = map
                 map.uiSettings.isCompassEnabled = false
+                map.uiSettings.setDoubleTapGesturesEnabled(false)
+                map.uiSettings.setQuickZoomGesturesEnabled(false)
                 map.setStyle(Style.Builder().fromUri(styleUrl())) { style ->
                     style.addSource(
                         GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>()))
@@ -526,6 +549,7 @@ fun MapComponent(
                         }
                         false
                     }
+
                     // Save camera position whenever the user stops panning/zooming
                     map.addOnCameraIdleListener {
                         val pos = map.cameraPosition
@@ -559,6 +583,129 @@ fun MapComponent(
                             .tilt(cam.tilt)
                             .build()
                         map.moveCamera(CameraUpdateFactory.newCameraPosition(restored))
+                    }
+                    val dp = context.resources.displayMetrics.density
+
+                    // Glow: tight radial gradient around the dot (background layer, doesn't rotate)
+                    val glowPx = (80 * dp).toInt()
+                    val glowBmp = Bitmap.createBitmap(glowPx, glowPx, Bitmap.Config.ARGB_8888)
+                    android.graphics.Canvas(glowBmp).drawCircle(
+                        glowPx / 2f, glowPx / 2f, glowPx / 2f,
+                        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                            shader = android.graphics.RadialGradient(
+                                glowPx / 2f, glowPx / 2f, glowPx / 2f,
+                                intArrayOf(0xCC2979FF.toInt(), 0x442979FF.toInt(), 0x002979FF.toInt()),
+                                floatArrayOf(0f, 0.5f, 1f),
+                                android.graphics.Shader.TileMode.CLAMP,
+                            )
+                        },
+                    )
+
+                    // Cone: sector shape that starts from the dot's outer edge (not the center),
+                    // gradient strong at inner arc → transparent at outer arc
+                    val conePx = (156 * dp).toInt()
+                    val coneBmp = Bitmap.createBitmap(conePx, conePx, Bitmap.Config.ARGB_8888)
+                    android.graphics.Canvas(coneBmp).apply {
+                        val cx = conePx / 2f
+                        val coneAngle = 72f
+                        val halfA = coneAngle / 2.0
+                        val len = cx * 0.92f
+                        // Dot outer edge radius (12dp radius + 2.5dp border + 0.5dp gap)
+                        val innerR = 15f * dp
+                        val innerFraction = innerR / len
+
+                        val conePath = android.graphics.Path().apply {
+                            // Start at left inner edge
+                            moveTo(
+                                (cx + innerR * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
+                                (cx + innerR * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
+                            )
+                            // Line to left outer edge
+                            lineTo(
+                                (cx + len * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
+                                (cx + len * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
+                            )
+                            // Outer arc (clockwise)
+                            arcTo(
+                                android.graphics.RectF(cx - len, cx - len, cx + len, cx + len),
+                                (-90f - coneAngle / 2f), coneAngle,
+                            )
+                            // Line back to right inner edge
+                            lineTo(
+                                (cx + innerR * Math.cos(Math.toRadians(-90.0 + halfA))).toFloat(),
+                                (cx + innerR * Math.sin(Math.toRadians(-90.0 + halfA))).toFloat(),
+                            )
+                            // Inner arc (counter-clockwise back to start)
+                            arcTo(
+                                android.graphics.RectF(cx - innerR, cx - innerR, cx + innerR, cx + innerR),
+                                (-90f + coneAngle / 2f), -coneAngle,
+                            )
+                            close()
+                        }
+                        save()
+                        clipPath(conePath)
+                        drawRect(
+                            0f, 0f, conePx.toFloat(), conePx.toFloat(),
+                            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                                shader = android.graphics.RadialGradient(
+                                    cx, cx, len,
+                                    intArrayOf(
+                                        0x002979FF.toInt(),
+                                        0xEE2979FF.toInt(),
+                                        0x882979FF.toInt(),
+                                        0x002979FF.toInt(),
+                                    ),
+                                    floatArrayOf(0f, innerFraction, 0.6f, 1f),
+                                    android.graphics.Shader.TileMode.CLAMP,
+                                )
+                            },
+                        )
+                        restore()
+                    }
+
+                    // Dot: blue circle with white border (foreground layer, on top)
+                    val dotPx = (24 * dp).toInt()
+                    val dotBmp = Bitmap.createBitmap(dotPx, dotPx, Bitmap.Config.ARGB_8888)
+                    android.graphics.Canvas(dotBmp).apply {
+                        val cx = dotPx / 2f
+                        drawCircle(cx, cx, cx, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+                        drawCircle(cx, cx, cx - 2.5f * dp, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2979FF.toInt() })
+                    }
+
+                    style.addImage("user-loc-glow", glowBmp)
+                    style.addImage("user-loc-cone", coneBmp)
+                    style.addImage("user-loc-dot", dotBmp)
+
+                    val locationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (locationPermission) {
+                        val locationOptions = org.maplibre.android.location.LocationComponentOptions.builder(context)
+                            .backgroundName("user-loc-glow")
+                            .bearingName("user-loc-cone")
+                            .foregroundName("user-loc-dot")
+                            .backgroundTintColor(null as Int?)
+                            .bearingTintColor(null as Int?)
+                            .foregroundTintColor(null as Int?)
+                            .backgroundStaleName("user-loc-glow")
+                            .foregroundStaleName("user-loc-dot")
+                            .accuracyAlpha(0f)
+                            .pulseEnabled(false)
+                            .build()
+                        val activationOptions = org.maplibre.android.location.LocationComponentActivationOptions
+                            .builder(context, style)
+                            .locationComponentOptions(locationOptions)
+                            .useDefaultLocationEngine(true)
+                            .build()
+                        map.locationComponent.activateLocationComponent(activationOptions)
+                        map.locationComponent.isLocationComponentEnabled = true
+                        map.locationComponent.cameraMode = org.maplibre.android.location.modes.CameraMode.NONE
+                        map.locationComponent.renderMode = org.maplibre.android.location.modes.RenderMode.COMPASS
+                        // onResume() was called before this activation — re-call it so the
+                        // LocationComponent's compass sensor and location engine properly start
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            mapView.onResume()
+                        }
                     }
                     styleReady.value = true
                     onMapReady(map)

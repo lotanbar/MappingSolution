@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,7 +39,6 @@ fun BottomActionPanel(
     onAddPoi: () -> Unit,
     onRecordRoute: () -> Unit,
     onOpenLibrary: () -> Unit,
-    onFlyToLocation: () -> Unit = {},
     recordingState: RecordingState = RecordingState.Idle,
     onPauseRecording: () -> Unit = {},
     onResumeRecording: () -> Unit = {},
@@ -83,15 +81,6 @@ fun BottomActionPanel(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onFlyToLocation, modifier = Modifier.size(56.dp)) {
-                Icon(
-                    imageVector = Icons.Default.GpsFixed,
-                    contentDescription = "Fly to current location",
-                    modifier = Modifier.size(32.dp),
-                    tint = Color.White,
-                )
-            }
-
             IconButton(onClick = onAddPoi, modifier = Modifier.size(56.dp)) {
                 Icon(
                     imageVector = Icons.Default.AddLocation,
