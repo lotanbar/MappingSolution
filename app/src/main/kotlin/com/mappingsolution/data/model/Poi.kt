@@ -14,4 +14,5 @@ data class Poi(
     val isVisible: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
+    val iconKey: String? = null,
 )

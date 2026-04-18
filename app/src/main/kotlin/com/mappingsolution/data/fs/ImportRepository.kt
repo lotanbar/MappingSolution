@@ -196,6 +196,7 @@ class ImportRepository @Inject constructor(
         var wptLat = 0.0; var wptLon = 0.0
         var wptName = ""; var wptDesc: String? = null
         var wptEle: Double? = null; var wptTime: Long? = null
+        var wptType = ""
         var wptImages = mutableListOf<String>()
         var trkName = ""; var trkDesc: String? = null
         val trkPoints = mutableListOf<RoutePoint>()
@@ -213,6 +214,7 @@ class ImportRepository @Inject constructor(
                             wptLat = parser.getAttributeValue(null, "lat")?.toDoubleOrNull() ?: 0.0
                             wptLon = parser.getAttributeValue(null, "lon")?.toDoubleOrNull() ?: 0.0
                             wptName = ""; wptDesc = null; wptEle = null; wptTime = null
+                            wptType = ""
                             wptImages = mutableListOf()
                         }
                         "trk" -> { inTrk = true; trkName = ""; trkDesc = null; trkPoints.clear() }
@@ -231,6 +233,7 @@ class ImportRepository @Inject constructor(
                     when (parser.name) {
                         "name" -> { if (inWpt) wptName = t else if (inTrk || inRte) trkName = t }
                         "desc" -> { if (inWpt) wptDesc = t.takeIf { it.isNotEmpty() } else if (inTrk || inRte) trkDesc = t.takeIf { it.isNotEmpty() } }
+                        "type" -> { if (inWpt) wptType = t }
                         "ele" -> { if (inWpt) wptEle = t.toDoubleOrNull() }
                         "time" -> {
                             val ts = parseIso8601(t)
@@ -254,6 +257,13 @@ class ImportRepository @Inject constructor(
                                     lat = wptLat, lng = wptLon,
                                     elevation = wptEle,
                                     mediaPaths = wptImages.toList(),
+                                    iconKey = if (wptType.isNotBlank()) {
+                                        com.mappingsolution.data.places.PoiIconResolver
+                                            .resolveForImportedType(wptType).takeIf { it != "place" }
+                                    } else {
+                                        com.mappingsolution.data.places.PoiIconResolver
+                                            .resolveForImportedName(wptName, wptDesc ?: "").takeIf { it != "place" }
+                                    },
                                     createdAt = wptTime ?: System.currentTimeMillis(),
                                     updatedAt = System.currentTimeMillis(),
                                 )

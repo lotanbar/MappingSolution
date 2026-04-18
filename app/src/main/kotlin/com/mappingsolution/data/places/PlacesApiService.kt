@@ -70,12 +70,18 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
                         val place = placesArray.getJSONObject(i)
                         val location = place.getJSONObject("location")
                         val name = place.getJSONObject("displayName").getString("text")
+                        val typesArray = place.optJSONArray("types")
+                        val types = if (typesArray != null) {
+                            (0 until typesArray.length()).map { typesArray.getString(it) }
+                        } else emptyList()
+                        val resolvedIconKey = PoiIconResolver.resolveForGoogleType(types)
                         Poi(
                             id = place.getString("id"),
                             groupId = GOOGLE_PLACES_GROUP_ID,
                             name = name,
                             lat = location.getDouble("latitude"),
                             lng = location.getDouble("longitude"),
+                            iconKey = resolvedIconKey,
                             createdAt = now,
                             updatedAt = now,
                         )

@@ -84,6 +84,7 @@ class BulkPoiRepository @Inject constructor(private val storageManager: StorageM
             isVisible = json.optBoolean("isVisible", true),
             createdAt = json.getLong("createdAt"),
             updatedAt = json.getLong("updatedAt"),
+            iconKey = json.optString("iconKey").takeIf { it.isNotEmpty() },
         )
     }
 
@@ -101,6 +102,7 @@ class BulkPoiRepository @Inject constructor(private val storageManager: StorageM
             put("isVisible", poi.isVisible)
             put("createdAt", poi.createdAt)
             put("updatedAt", poi.updatedAt)
+            poi.iconKey?.let { put("iconKey", it) }
         }.toString()
     }
 }

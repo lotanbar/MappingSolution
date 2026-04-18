@@ -10,7 +10,7 @@ const val GOOGLE_PLACES_FETCH_DEBOUNCE_MS = 800L
 const val GOOGLE_PLACES_MAX_RESULTS = 40     // target per viewport; fetched as 20+20 or adjusted for cache
 const val GOOGLE_PLACES_MAX_PER_CALL = 20    // hard API limit per single call
 const val GOOGLE_PLACES_CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000   // 7 days
-const val GOOGLE_PLACES_FIELD_MASK = "places.id,places.displayName,places.location"
+const val GOOGLE_PLACES_FIELD_MASK = "places.id,places.displayName,places.location,places.types"
 
 val GOOGLE_PLACES_INCLUDED_TYPES = listOf(
     "restaurant", "cafe", "bar", "bakery", "fast_food_restaurant", "coffee_shop",

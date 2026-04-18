@@ -56,12 +56,15 @@ class OsmApiService @Inject constructor(private val httpClient: OkHttpClient) {
                         val name = tags.optString("name").takeIf { it.isNotBlank() }
                             ?: tags.optString("name:en").takeIf { it.isNotBlank() }
                             ?: return@runCatching null
+                        val tagsMap = tags.keys().asSequence().associateWith { tags.getString(it) }
+                        val resolvedIconKey = PoiIconResolver.resolveForOsmTags(tagsMap)
                         Poi(
                             id = "osm_${el.getLong("id")}",
                             groupId = OSM_POI_GROUP_ID,
                             name = name,
                             lat = el.getDouble("lat"),
                             lng = el.getDouble("lon"),
+                            iconKey = resolvedIconKey,
                             createdAt = now,
                             updatedAt = now,
                         )

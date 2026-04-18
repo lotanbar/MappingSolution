@@ -27,6 +27,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.gson.JsonObject
 import com.mappingsolution.BuildConfig
+import com.mappingsolution.PoiSource
+import com.mappingsolution.createCircleIcon
 import com.mappingsolution.createPinBitmap
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
@@ -92,6 +94,34 @@ private fun createPoiPin(
     return bitmap
 }
 
+private fun createPoiCircle(
+    iconKey: String,
+    source: PoiSource,
+    painter: Painter,
+    density: Density,
+    layoutDirection: LayoutDirection,
+    size: Int = 80,
+): Bitmap {
+    val bitmap = createCircleIcon(iconKey, source, size = size)
+    val androidCanvas = android.graphics.Canvas(bitmap)
+    val composeCanvas = androidx.compose.ui.graphics.Canvas(androidCanvas)
+    val drawScope = CanvasDrawScope()
+    val iconSize = size * 0.55f
+    val offset = (size - iconSize) / 2f
+
+    drawScope.draw(density, layoutDirection, composeCanvas, Size(size.toFloat(), size.toFloat())) {
+        withTransform({ translate(offset, offset) }) {
+            with(painter) {
+                draw(
+                    size = Size(iconSize, iconSize),
+                    colorFilter = ColorFilter.tint(Color.White),
+                )
+            }
+        }
+    }
+    return bitmap
+}
+
 @Composable
 fun MapComponent(
     pois: List<Poi> = emptyList(),
@@ -136,29 +166,23 @@ fun MapComponent(
     val styleReady = remember { mutableStateOf(false) }
     val onMapErrorRef = rememberUpdatedState(onMapError)
 
-    // Generate painters for all needed icons
-    val iconKeys = remember(groups) { groups.map { it.iconKey }.toSet() + "place" }
-    val painters = iconKeys.associateWith { rememberVectorPainter(IconCatalog.iconVector(it)) }
+    // Pre-create painters for ALL catalog icons (fixed set — composable safe)
+    val allIconKeys = remember { IconCatalog.categories.flatMap { it.icons }.map { it.key } }
+    val allPainters = allIconKeys.associateWith { rememberVectorPainter(IconCatalog.iconVector(it)) }
+    val placePainterFallback = allPainters["place"] ?: rememberVectorPainter(IconCatalog.iconVector("place"))
+
+    // Painters for group icons (subset of allPainters, kept for groupBitmaps)
+    val painters = allPainters
 
     // Generate bitmaps for each group + default
     val groupBitmaps = remember(groups, painters) {
         val bitmaps = mutableMapOf<String, Bitmap>()
         groups.forEach { group ->
-            val painter = painters[group.iconKey] ?: painters["place"]!!
+            val painter = painters[group.iconKey] ?: placePainterFallback
             bitmaps[group.id] = createPoiPin(group.color, painter, density, layoutDirection)
         }
-        bitmaps["default"] = createPoiPin("#2196F3", painters["place"]!!, density, layoutDirection)
+        bitmaps["default"] = createPoiPin("#2196F3", placePainterFallback, density, layoutDirection)
         bitmaps
-    }
-
-    // Fixed bitmaps for the two new layers (blue Google, green OSM)
-    val placePainter = rememberVectorPainter(IconCatalog.iconVector("place"))
-    val terrainPainter = rememberVectorPainter(IconCatalog.iconVector("terrain"))
-    val googlePlacesBitmap = remember(placePainter) {
-        createPoiPin("#4285F4", placePainter, density, layoutDirection)
-    }
-    val osmPoiBitmap = remember(terrainPainter) {
-        createPoiPin("#4CAF50", terrainPainter, density, layoutDirection)
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -196,13 +220,16 @@ fun MapComponent(
         }
     }
 
-    // Update fixed-color bitmaps for places layers
-    LaunchedEffect(styleReady.value, googlePlacesBitmap, osmPoiBitmap) {
+    // Register all catalog icon bitmaps for Google (gradient border) and OSM (yellow border) on style ready
+    LaunchedEffect(styleReady.value) {
         val map = mapState.value ?: return@LaunchedEffect
         if (!styleReady.value) return@LaunchedEffect
         val style = map.style ?: return@LaunchedEffect
-        style.addImage("pin-google-place", googlePlacesBitmap)
-        style.addImage("pin-osm-poi", osmPoiBitmap)
+        allIconKeys.forEach { key ->
+            val painter = allPainters[key] ?: placePainterFallback
+            style.addImage("pin-google-$key", createPoiCircle(key, PoiSource.GOOGLE, painter, density, layoutDirection))
+            style.addImage("pin-osm-$key", createPoiCircle(key, PoiSource.OSM, painter, density, layoutDirection))
+        }
     }
 
     // Re-render POIs whenever data or style readiness changes
@@ -295,11 +322,15 @@ fun MapComponent(
         val style = map.style ?: return@LaunchedEffect
         val source = style.getSource("google-places-source") as? GeoJsonSource ?: return@LaunchedEffect
         val features = googlePlaces.map { poi ->
+            val iconId = "pin-google-${poi.iconKey ?: "place"}"
             Feature.fromGeometry(
                 Point.fromLngLat(poi.lng, poi.lat),
                 null,
                 poi.id,
-            ).apply { addStringProperty("poiId", poi.id) }
+            ).apply {
+                addStringProperty("poiId", poi.id)
+                addStringProperty("icon-id", iconId)
+            }
         }
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
@@ -310,11 +341,15 @@ fun MapComponent(
         val style = map.style ?: return@LaunchedEffect
         val source = style.getSource("osm-poi-source") as? GeoJsonSource ?: return@LaunchedEffect
         val features = osmPois.map { poi ->
+            val iconId = "pin-osm-${poi.iconKey ?: "place"}"
             Feature.fromGeometry(
                 Point.fromLngLat(poi.lng, poi.lat),
                 null,
                 poi.id,
-            ).apply { addStringProperty("poiId", poi.id) }
+            ).apply {
+                addStringProperty("poiId", poi.id)
+                addStringProperty("icon-id", iconId)
+            }
         }
         source.setGeoJson(FeatureCollection.fromFeatures(features))
     }
@@ -324,8 +359,26 @@ fun MapComponent(
         if (!styleReady.value) return@LaunchedEffect
         val style = map.style ?: return@LaunchedEffect
         val source = style.getSource("bulk-poi-source") as? GeoJsonSource ?: return@LaunchedEffect
+
+        // Build a colour lookup for each group
+        val groupColorMap = groups.associate { it.id to it.color }
+
+        // Register a bitmap for each unique (iconKey, groupColor) combo not already registered
+        val registered = mutableSetOf<String>()
+        bulkPois.forEach { poi ->
+            val resolvedIcon = poi.iconKey ?: "place"  // always use circle, never teardrop pin
+            val groupColor = groupColorMap[poi.groupId] ?: "#2196F3"
+            val bitmapKey = "pin-bulk-$resolvedIcon-$groupColor"
+            if (registered.add(bitmapKey)) {
+                val painter = allPainters[resolvedIcon] ?: placePainterFallback
+                style.addImage(bitmapKey, createPoiCircle(resolvedIcon, PoiSource.BULK, painter, density, layoutDirection))
+            }
+        }
+
         val features = bulkPois.map { poi ->
-            val iconId = "pin-${poi.groupId ?: "default"}"
+            val resolvedIcon = poi.iconKey ?: "place"
+            val groupColor = groupColorMap[poi.groupId] ?: "#2196F3"
+            val iconId = "pin-bulk-$resolvedIcon-$groupColor"
             Feature.fromGeometry(
                 Point.fromLngLat(poi.lng, poi.lat),
                 null,
@@ -368,34 +421,34 @@ fun MapComponent(
                             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                         )
                     )
-                    // OSM POI layer (below bulk and Google Places)
+                    // OSM POI layer (below bulk and Google Places) — circle icons, centered
                     style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addLayer(
                         SymbolLayer("osm-poi-symbols", "osm-poi-source").withProperties(
-                            PropertyFactory.iconImage("pin-osm-poi"),
+                            PropertyFactory.iconImage(Expression.get("icon-id")),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
                         )
                     )
-                    // Bulk imported POIs layer (above OSM, below Google Places)
+                    // Bulk imported POIs layer (above OSM, below Google Places) — circle icons, centered
                     style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addLayer(
                         SymbolLayer("bulk-poi-symbols", "bulk-poi-source").withProperties(
                             PropertyFactory.iconImage(Expression.get("icon-id")),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
                         )
                     )
-                    // Google Places layer (above bulk, below user POIs)
+                    // Google Places layer (above bulk, below user POIs) — circle icons, centered
                     style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
                     style.addLayer(
                         SymbolLayer("google-places-symbols", "google-places-source").withProperties(
-                            PropertyFactory.iconImage("pin-google-place"),
+                            PropertyFactory.iconImage(Expression.get("icon-id")),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
                         )
                     )
                     style.addLayer(
