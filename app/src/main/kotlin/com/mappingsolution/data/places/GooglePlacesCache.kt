@@ -17,12 +17,13 @@ class GooglePlacesCache @Inject constructor(@ApplicationContext context: Context
 
     private fun cacheFile(key: String) = File(cacheDir, "gp_$key.json")
 
-    /** Loads cached POIs for [key] if they exist and are younger than [GOOGLE_PLACES_CACHE_TTL_MS]. */
+    /** Loads cached POIs for [key] if they exist, are younger than [GOOGLE_PLACES_CACHE_TTL_MS], and are v2+. */
     fun load(key: String): List<Poi>? {
         val file = cacheFile(key)
         if (!file.exists()) return null
         return runCatching {
             val json = JSONObject(file.readText())
+            if (json.optInt("version", 1) < 2) return null  // stale format without iconKey
             val fetchedAt = json.getLong("fetchedAt")
             if (System.currentTimeMillis() - fetchedAt > GOOGLE_PLACES_CACHE_TTL_MS) return null
             val arr = json.getJSONArray("pois")
@@ -41,6 +42,7 @@ class GooglePlacesCache @Inject constructor(@ApplicationContext context: Context
             val arr = JSONArray()
             pois.forEach { arr.put(poiToJson(it)) }
             val json = JSONObject().apply {
+                put("version", 2)
                 put("fetchedAt", System.currentTimeMillis())
                 put("pois", arr)
             }
@@ -48,14 +50,16 @@ class GooglePlacesCache @Inject constructor(@ApplicationContext context: Context
         }.onFailure { Log.w("GooglePlacesCache", "Failed to write cache for $key", it) }
     }
 
-    /** Deletes all cache files older than [GOOGLE_PLACES_CACHE_TTL_MS]. */
+    /** Deletes all cache files older than [GOOGLE_PLACES_CACHE_TTL_MS] or in an old format. */
     fun evictStale() {
         val now = System.currentTimeMillis()
         cacheDir.listFiles { f -> f.name.startsWith("gp_") && f.extension == "json" }
             ?.forEach { file ->
                 runCatching {
-                    val fetchedAt = JSONObject(file.readText()).getLong("fetchedAt")
-                    if (now - fetchedAt > GOOGLE_PLACES_CACHE_TTL_MS) file.delete()
+                    val json = JSONObject(file.readText())
+                    val fetchedAt = json.getLong("fetchedAt")
+                    val version = json.optInt("version", 1)
+                    if (now - fetchedAt > GOOGLE_PLACES_CACHE_TTL_MS || version < 2) file.delete()
                 }
             }
     }
@@ -65,6 +69,7 @@ class GooglePlacesCache @Inject constructor(@ApplicationContext context: Context
         put("name", poi.name)
         put("lat", poi.lat)
         put("lng", poi.lng)
+        poi.iconKey?.let { put("iconKey", it) }
     }
 
     private fun poisFromJson(obj: JSONObject, fetchedAt: Long) = Poi(
@@ -73,6 +78,7 @@ class GooglePlacesCache @Inject constructor(@ApplicationContext context: Context
         name = obj.getString("name"),
         lat = obj.getDouble("lat"),
         lng = obj.getDouble("lng"),
+        iconKey = obj.optString("iconKey").ifBlank { null },
         createdAt = fetchedAt,
         updatedAt = fetchedAt,
     )

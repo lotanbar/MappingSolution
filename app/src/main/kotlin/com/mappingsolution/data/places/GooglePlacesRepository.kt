@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sqrt
 
 @Singleton
@@ -25,6 +25,8 @@ class GooglePlacesRepository @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    @Volatile private var lastFetchedBounds: FetchedBounds? = null
+
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
     /** Fetches photo URLs for a specific Google Place (up to 3). Empty list on any error. */
@@ -32,8 +34,12 @@ class GooglePlacesRepository @Inject constructor(
         withContext(Dispatchers.IO) { api.fetchPlacePhotoUrls(placeId) }
 
     /**
-     * Fetches Google Places POIs for the given viewport bounds.
-     * Uses the disk cache; only fetches from the API if the cache doesn't have enough results.
+     * Fetches Google Places POIs for the given viewport bounds using strip-based fetching.
+     *
+     * Only the sub-regions of the new viewport NOT already seen this session are queried
+     * (see [computeNewStrips]).  Zoom-in always triggers a full fetch of the smaller viewport
+     * so the user gets more detail.  POIs in the scrolling overlap are preserved from
+     * [pois] without re-fetching, preventing pins from appearing in already-seen areas.
      */
     suspend fun refreshForViewport(
         north: Double,
@@ -42,59 +48,103 @@ class GooglePlacesRepository @Inject constructor(
         west: Double,
     ) = withContext(Dispatchers.IO) {
         try {
-        _isLoading.value = true
-        val centerLat = (north + south) / 2.0
-        val centerLng = (east + west) / 2.0
-        val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
+            _isLoading.value = true
+            val centerLat = (north + south) / 2.0
+            val centerLng = (east + west) / 2.0
+            val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
+            val currentBounds = FetchedBounds(north, south, east, west)
+            val prevBounds = lastFetchedBounds
 
-        val cached = cache.load(cacheKey)
-        val cachedInView = cached
-            ?.filter { it.lat in south..north && it.lng in west..east }
-            ?: emptyList()
+            val cached = cache.load(cacheKey)
+            val cachedInView = cached
+                ?.filter { it.lat in south..north && it.lng in west..east }
+                ?: emptyList()
 
-        val remaining = maxOf(0, GOOGLE_PLACES_MAX_RESULTS - cachedInView.size)
+            val remaining = maxOf(0, GOOGLE_PLACES_MAX_RESULTS - cachedInView.size)
+            if (remaining == 0) {
+                _pois.value = mergeWithExisting(cachedInView, south, north, east, west)
+                lastFetchedBounds = currentBounds
+                return@withContext
+            }
 
-        if (remaining == 0) {
-            _pois.value = cachedInView
-            return@withContext
-        }
+            // Compute only the sub-regions not yet seen in this session.
+            val strips = computeNewStrips(currentBounds, prevBounds)
+            if (strips.isEmpty()) {
+                _pois.value = mergeWithExisting(cachedInView, south, north, east, west)
+                lastFetchedBounds = currentBounds
+                return@withContext
+            }
 
-        // Round up to even so we split evenly between N and S halves
-        val remainingRounded = if (remaining % 2 != 0) remaining + 1 else remaining
-        val maxPerHalf = min(remainingRounded / 2, GOOGLE_PLACES_MAX_PER_CALL)
+            // Distribute remaining quota evenly across strips; each strip → one API call (max 20).
+            val existingInViewport = _pois.value.filter { it.lat in south..north && it.lng in west..east }
+            val quota = maxOf(0, GOOGLE_PLACES_MAX_RESULTS - existingInViewport.size)
+            val maxPerStrip = minOf(20, ceil(quota.toDouble() / strips.size).toInt())
 
-        // Radius covers each N/S half of the viewport
-        val halfLatDeg = (north - south) / 4.0
-        val halfLngDeg = (east - west) / 2.0
-        val radiusMeters = sqrt(
-            (halfLatDeg * 111_000).let { it * it } +
-            (halfLngDeg * 111_000 * cos(Math.toRadians(centerLat))).let { it * it }
-        )
+            val allStripPois = mutableListOf<Poi>()
+            if (maxPerStrip > 0) {
+                for (strip in strips) {
+                    val stripCenterLat = (strip.north + strip.south) / 2.0
+                    val stripCenterLng = (strip.east + strip.west) / 2.0
+                    val halfLatDeg = (strip.north - strip.south) / 2.0
+                    val halfLngDeg = (strip.east - strip.west) / 2.0
+                    val radiusMeters = sqrt(
+                        (halfLatDeg * 111_000).let { it * it } +
+                        (halfLngDeg * 111_000 * cos(Math.toRadians(stripCenterLat))).let { it * it }
+                    )
+                    val stripPois = runCatching {
+                        api.fetchNearby(stripCenterLat, stripCenterLng, radiusMeters, maxPerStrip)
+                    }.getOrElse { e -> Log.e("GooglePlacesRepo", "Strip fetch failed", e); emptyList() }
+                    allStripPois += stripPois
+                }
+            }
 
-        val nCenterLat = (centerLat + north) / 2.0
-        val sCenterLat = (centerLat + south) / 2.0
+            // Deduplicate: cached + existing in-viewport + freshly fetched strip POIs.
+            val combined = (
+                (cached ?: emptyList()).associateBy { it.id } +
+                existingInViewport.associateBy { it.id } +
+                allStripPois.associateBy { it.id }
+            ).values.toList()
 
-        val northPois = runCatching {
-            api.fetchNearby(nCenterLat, centerLng, radiusMeters, maxPerHalf)
-        }.getOrElse { e -> Log.e("GooglePlacesRepo", "N-half fetch failed", e); emptyList() }
-
-        val southPois = runCatching {
-            api.fetchNearby(sCenterLat, centerLng, radiusMeters, maxPerHalf)
-        }.getOrElse { e -> Log.e("GooglePlacesRepo", "S-half fetch failed", e); emptyList() }
-
-        val fetchedById = (northPois + southPois).associateBy { it.id }
-        val cachedById = (cached ?: emptyList()).associateBy { it.id }
-        val combined = (cachedById + fetchedById).values.toList()
-
-        cache.store(cacheKey, combined)
-        _pois.value = combined.filter { it.lat in south..north && it.lng in west..east }
+            cache.store(cacheKey, combined)
+            _pois.value = mergeWithExisting(
+                combined.filter { it.lat in south..north && it.lng in west..east },
+                south, north, east, west,
+            )
+            lastFetchedBounds = currentBounds
         } finally {
             _isLoading.value = false
         }
     }
 
-    /** Clears in-memory POIs (e.g. when zoomed below threshold). */
-    fun clear() { _pois.value = emptyList() }
+    /**
+     * Merges [newPois] with whichever existing POIs are still inside the current
+     * viewport, then filters the union to the current viewport.
+     * For duplicate IDs, prefers whichever copy has a resolved iconKey so that
+     * a cache miss (iconKey = null) never overwrites a freshly-resolved icon.
+     */
+    private fun mergeWithExisting(
+        newPois: List<Poi>,
+        south: Double,
+        north: Double,
+        east: Double,
+        west: Double,
+    ): List<Poi> {
+        val existingById = _pois.value.associateBy { it.id }
+        val newById = newPois.associateBy { it.id }
+        return (existingById + newById)
+            .mapValues { (id, poi) ->
+                val existing = existingById[id]
+                if (poi.iconKey == null && existing?.iconKey != null) existing else poi
+            }
+            .values
+            .filter { it.lat in south..north && it.lng in west..east }
+    }
+
+    /** Clears in-memory POIs and resets session tracking (e.g. when zoomed below threshold). */
+    fun clear() {
+        _pois.value = emptyList()
+        lastFetchedBounds = null
+    }
 
     /** Called once on app launch to purge stale cache files. Does not refetch. */
     suspend fun evictStaleCacheOnLaunch() = withContext(Dispatchers.IO) {
@@ -102,3 +152,4 @@ class GooglePlacesRepository @Inject constructor(
             .onFailure { Log.w("GooglePlacesRepo", "Cache eviction failed", it) }
     }
 }
+

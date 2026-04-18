@@ -22,11 +22,18 @@ class OsmPoiRepository @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    @Volatile private var lastFetchedBounds: FetchedBounds? = null
+
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
     /**
-     * Fetches OSM natural/historic POIs for the given viewport bounds.
+     * Fetches OSM natural/historic POIs for the given viewport bounds using strip-based fetching.
      * Cache TTL is 30 days — natural features don't move.
+     *
+     * Only the sub-regions of the new viewport NOT already seen this session are queried
+     * (see [computeNewStrips]).  Zoom-in always triggers a full fetch of the smaller viewport
+     * so the user gets more detail.  POIs in the scrolling overlap are preserved from
+     * [pois] without re-fetching, preventing pins from appearing in already-seen areas.
      */
     suspend fun refreshForViewport(
         north: Double,
@@ -35,33 +42,90 @@ class OsmPoiRepository @Inject constructor(
         west: Double,
     ) = withContext(Dispatchers.IO) {
         try {
-        _isLoading.value = true
-        val centerLat = (north + south) / 2.0
-        val centerLng = (east + west) / 2.0
-        val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
+            _isLoading.value = true
+            val centerLat = (north + south) / 2.0
+            val centerLng = (east + west) / 2.0
+            val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
+            val currentBounds = FetchedBounds(north, south, east, west)
+            val prevBounds = lastFetchedBounds
 
-        val cached = cache.load(cacheKey)
-        if (cached != null) {
-            _pois.value = cached.filter { it.lat in south..north && it.lng in west..east }
-            return@withContext
-        }
+            val cached = cache.load(cacheKey)
+            if (cached != null && cached.covers(south, west, north, east)) {
+                _pois.value = mergeWithExisting(
+                    cached.pois.filter { it.lat in south..north && it.lng in west..east },
+                    south, north, east, west,
+                )
+                lastFetchedBounds = currentBounds
+                return@withContext
+            }
 
-        val fetched = runCatching {
-            api.fetchPois(south, west, north, east)
-        }.getOrElse { e ->
-            Log.e("OsmPoiRepo", "fetch failed", e)
-            emptyList()
-        }
+            val strips = computeNewStrips(currentBounds, prevBounds)
+            if (strips.isEmpty()) {
+                val cachedPois = cached?.pois
+                    ?.filter { it.lat in south..north && it.lng in west..east }
+                    ?: emptyList()
+                _pois.value = mergeWithExisting(cachedPois, south, north, east, west)
+                lastFetchedBounds = currentBounds
+                return@withContext
+            }
 
-        cache.store(cacheKey, fetched)
-        _pois.value = fetched.filter { it.lat in south..north && it.lng in west..east }
+            val allStripPois = mutableListOf<Poi>()
+            for (strip in strips) {
+                val stripPois = runCatching {
+                    api.fetchPois(strip.south, strip.west, strip.north, strip.east)
+                }.getOrElse { e -> Log.e("OsmPoiRepo", "Strip fetch failed", e); emptyList() }
+                allStripPois += stripPois
+            }
+
+            // Deduplicate: cached + existing in-viewport + freshly fetched strip POIs.
+            val existingInViewport = _pois.value.filter { it.lat in south..north && it.lng in west..east }
+            val combined = (
+                (cached?.pois ?: emptyList()).associateBy { it.id } +
+                existingInViewport.associateBy { it.id } +
+                allStripPois.associateBy { it.id }
+            ).values.toList()
+
+            // Store with full viewport bounds so the coverage check passes on return visits.
+            cache.store(cacheKey, combined, south, west, north, east)
+            _pois.value = mergeWithExisting(
+                combined.filter { it.lat in south..north && it.lng in west..east },
+                south, north, east, west,
+            )
+            lastFetchedBounds = currentBounds
         } finally {
             _isLoading.value = false
         }
     }
 
-    /** Clears in-memory POIs (e.g. when zoomed below threshold). */
-    fun clear() { _pois.value = emptyList() }
+    /**
+     * Merges [newPois] with whichever existing POIs are still inside the current
+     * viewport, then filters the union to the current viewport.
+     * For duplicate IDs, prefers whichever copy has a resolved iconKey so that
+     * a cache miss (iconKey = null) never overwrites a freshly-resolved icon.
+     */
+    private fun mergeWithExisting(
+        newPois: List<Poi>,
+        south: Double,
+        north: Double,
+        east: Double,
+        west: Double,
+    ): List<Poi> {
+        val existingById = _pois.value.associateBy { it.id }
+        val newById = newPois.associateBy { it.id }
+        return (existingById + newById)
+            .mapValues { (id, poi) ->
+                val existing = existingById[id]
+                if (poi.iconKey == null && existing?.iconKey != null) existing else poi
+            }
+            .values
+            .filter { it.lat in south..north && it.lng in west..east }
+    }
+
+    /** Clears in-memory POIs and resets session tracking (e.g. when zoomed below threshold). */
+    fun clear() {
+        _pois.value = emptyList()
+        lastFetchedBounds = null
+    }
 
     /** Called once on app launch to purge stale cache files. Does not refetch. */
     suspend fun evictStaleCacheOnLaunch() = withContext(Dispatchers.IO) {
@@ -69,3 +133,4 @@ class OsmPoiRepository @Inject constructor(
             .onFailure { Log.w("OsmPoiRepo", "Cache eviction failed", it) }
     }
 }
+

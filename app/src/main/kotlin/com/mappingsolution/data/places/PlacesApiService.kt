@@ -21,7 +21,7 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
 
     /**
      * Fetches nearby places centered on [lat]/[lng] within [radiusMeters].
-     * Returns at most [maxCount] results (capped at [GOOGLE_PLACES_MAX_PER_CALL]).
+     * Returns at most [maxCount] results (capped by the API at 20).
      */
     suspend fun fetchNearby(
         lat: Double,
@@ -34,7 +34,7 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
             Log.w("PlacesApiService", "GOOGLE_PLACES_API_KEY is not set; skipping fetch")
             return emptyList()
         }
-        val effectiveMax = minOf(maxCount, GOOGLE_PLACES_MAX_PER_CALL)
+        val effectiveMax = maxCount
         val body = JSONObject().apply {
             put("includedTypes", org.json.JSONArray(GOOGLE_PLACES_INCLUDED_TYPES))
             put("maxResultCount", effectiveMax)
