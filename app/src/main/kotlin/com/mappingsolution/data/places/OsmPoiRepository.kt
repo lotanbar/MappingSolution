@@ -23,6 +23,7 @@ class OsmPoiRepository @Inject constructor(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     @Volatile private var lastFetchedBounds: FetchedBounds? = null
+    @Volatile private var lastFetchedZoom: Double? = null
 
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
@@ -40,9 +41,17 @@ class OsmPoiRepository @Inject constructor(
         south: Double,
         east: Double,
         west: Double,
+        zoom: Double,
     ) = withContext(Dispatchers.IO) {
         try {
             _isLoading.value = true
+
+            // Zoom-out: discard high-zoom POIs so the user sees a clean low-zoom fetch.
+            val prevZoom = lastFetchedZoom
+            if (prevZoom != null && zoom < prevZoom) {
+                _pois.value = emptyList()
+                lastFetchedBounds = null
+            }
             val centerLat = (north + south) / 2.0
             val centerLng = (east + west) / 2.0
             val cacheKey = "%.2f_%.2f".format(centerLat, centerLng)
@@ -56,6 +65,7 @@ class OsmPoiRepository @Inject constructor(
                     south, north, east, west,
                 )
                 lastFetchedBounds = currentBounds
+                lastFetchedZoom = zoom
                 return@withContext
             }
 
@@ -66,6 +76,7 @@ class OsmPoiRepository @Inject constructor(
                     ?: emptyList()
                 _pois.value = mergeWithExisting(cachedPois, south, north, east, west)
                 lastFetchedBounds = currentBounds
+                lastFetchedZoom = zoom
                 return@withContext
             }
 
@@ -92,6 +103,7 @@ class OsmPoiRepository @Inject constructor(
                 south, north, east, west,
             )
             lastFetchedBounds = currentBounds
+            lastFetchedZoom = zoom
         } finally {
             _isLoading.value = false
         }
@@ -125,6 +137,7 @@ class OsmPoiRepository @Inject constructor(
     fun clear() {
         _pois.value = emptyList()
         lastFetchedBounds = null
+        lastFetchedZoom = null
     }
 
     /** Called once on app launch to purge stale cache files. Does not refetch. */

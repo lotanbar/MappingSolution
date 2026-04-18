@@ -120,13 +120,13 @@ class MainViewModel @Inject constructor(
         googleRefreshJob?.cancel()
         googleRefreshJob = viewModelScope.launch {
             delay(GOOGLE_PLACES_FETCH_DEBOUNCE_MS)
-            googlePlacesRepository.refreshForViewport(north, south, east, west)
+            googlePlacesRepository.refreshForViewport(north, south, east, west, zoom)
         }
 
         osmRefreshJob?.cancel()
         osmRefreshJob = viewModelScope.launch {
             delay(OSM_FETCH_DEBOUNCE_MS)
-            osmPoiRepository.refreshForViewport(north, south, east, west)
+            osmPoiRepository.refreshForViewport(north, south, east, west, zoom)
         }
 
         val bulkGroups = groups.value.filter { it.isBulk && it.importComplete }
