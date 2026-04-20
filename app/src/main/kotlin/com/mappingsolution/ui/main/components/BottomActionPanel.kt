@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.recording.RecordingState
 
 @Composable
@@ -39,6 +41,8 @@ fun BottomActionPanel(
     onAddPoi: () -> Unit,
     onRecordRoute: () -> Unit,
     onOpenLibrary: () -> Unit,
+    currentMapStyle: MapStyle = MapStyle.SATELLITE,
+    onToggleMapStyle: () -> Unit = {},
     recordingState: RecordingState = RecordingState.Idle,
     onPauseRecording: () -> Unit = {},
     onResumeRecording: () -> Unit = {},
@@ -81,6 +85,17 @@ fun BottomActionPanel(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val layersTint = if (currentMapStyle == MapStyle.TOPO_DARK)
+                Color(0xFF80CBC4) else Color.White
+            IconButton(onClick = onToggleMapStyle, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Layers,
+                    contentDescription = "Toggle map style",
+                    modifier = Modifier.size(32.dp),
+                    tint = layersTint,
+                )
+            }
+
             IconButton(onClick = onAddPoi, modifier = Modifier.size(56.dp)) {
                 Icon(
                     imageVector = Icons.Default.AddLocation,

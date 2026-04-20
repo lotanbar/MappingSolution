@@ -30,6 +30,7 @@ import com.mappingsolution.BuildConfig
 import com.mappingsolution.PoiSource
 import com.mappingsolution.createCircleIcon
 import com.mappingsolution.createPinBitmap
+import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
@@ -55,8 +56,12 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
-private fun styleUrl() =
-    "https://api.maptiler.com/maps/hybrid/style.json?key=${BuildConfig.MAPTILER_API_KEY}"
+private fun styleUrl(mapStyle: MapStyle = MapStyle.SATELLITE) = when (mapStyle) {
+    MapStyle.SATELLITE ->
+        "https://api.maptiler.com/maps/hybrid/style.json?key=${BuildConfig.MAPTILER_API_KEY}"
+    MapStyle.TOPO_DARK ->
+        "https://api.maptiler.com/maps/outdoor-v2-dark/style.json?key=${BuildConfig.MAPTILER_API_KEY}"
+}
 
 private fun createPoiPin(
     colorHex: String,
@@ -147,6 +152,7 @@ fun MapComponent(
     liveRouteColor: String = "#FFFF5722",
     flyToLocation: Pair<Double, Double>? = null,
     initialCamera: ViewportPreference.SavedCamera? = null,
+    mapStyle: MapStyle = MapStyle.SATELLITE,
     onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
     onBoundsChanged: (north: Double, south: Double, east: Double, west: Double, lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onPoiTapped: (String) -> Unit = {},
@@ -226,6 +232,38 @@ fun MapComponent(
                 }
             }
             onMapDisposed()
+        }
+    }
+
+    // Switch base map style at runtime when mapStyle changes (skips the very first value,
+    // which is handled by getMapAsync). On switch: mark styleReady false → set the new style
+    // → re-add all custom sources/layers in the callback → styleReady flips true, causing
+    // all existing LaunchedEffects to re-fire and repopulate POI/route GeoJSON sources.
+    val isFirstStyle = remember { mutableStateOf(true) }
+    LaunchedEffect(mapStyle) {
+        if (isFirstStyle.value) {
+            isFirstStyle.value = false
+            return@LaunchedEffect
+        }
+        val map = mapState.value ?: return@LaunchedEffect
+        styleReady.value = false
+        map.setStyle(Style.Builder().fromUri(styleUrl(mapStyle))) { style ->
+            setupMapStyle(
+                style = style,
+                map = map,
+                context = context,
+                mapView = mapView,
+                lifecycleOwner = lifecycleOwner,
+                groupBitmaps = groupBitmaps,
+                allIconKeys = allIconKeys,
+                allPainters = allPainters,
+                placePainterFallback = placePainterFallback,
+                density = density,
+                layoutDirection = layoutDirection,
+                initialCamera = null, // already positioned; don't reset camera on style switch
+                styleReady = styleReady,
+                onMapReady = {}, // already registered
+            )
         }
     }
 
@@ -434,285 +472,325 @@ fun MapComponent(
                 map.uiSettings.isCompassEnabled = false
                 map.uiSettings.setDoubleTapGesturesEnabled(false)
                 map.uiSettings.setQuickZoomGesturesEnabled(false)
-                map.setStyle(Style.Builder().fromUri(styleUrl())) { style ->
-                    style.addSource(
-                        GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>()))
-                    )
-                    style.addSource(GeoJsonSource("saved-routes-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
-                    style.addSource(GeoJsonSource("live-route-source"))
-                    style.addLayer(
-                        LineLayer("saved-routes-lines", "saved-routes-source").withProperties(
-                            PropertyFactory.lineColor(Expression.get("routeColor")),
-                            PropertyFactory.lineWidth(3f),
-                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-                        )
-                    )
-                    style.addLayer(
-                        LineLayer("live-route-line", "live-route-source").withProperties(
-                            PropertyFactory.lineColor("#FF5722"),
-                            PropertyFactory.lineWidth(4f),
-                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
-                        )
-                    )
-                    // OSM POI layer (below bulk and Google Places) — circle icons, centered
-                    style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
-                    style.addLayer(
-                        SymbolLayer("osm-poi-symbols", "osm-poi-source").withProperties(
-                            PropertyFactory.iconImage(Expression.get("icon-id")),
-                            PropertyFactory.iconAllowOverlap(true),
-                            PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
-                            PropertyFactory.iconOpacity(0.9f),
-                        )
-                    )
-                    // Bulk imported POIs layer (above OSM, below Google Places) — circle icons, centered
-                    style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
-                    style.addLayer(
-                        SymbolLayer("bulk-poi-symbols", "bulk-poi-source").withProperties(
-                            PropertyFactory.iconImage(Expression.get("icon-id")),
-                            PropertyFactory.iconAllowOverlap(true),
-                            PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
-                            PropertyFactory.iconOpacity(0.9f),
-                        )
-                    )
-                    // Google Places layer (above bulk, below user POIs) — circle icons, centered
-                    style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
-                    style.addLayer(
-                        SymbolLayer("google-places-symbols", "google-places-source").withProperties(
-                            PropertyFactory.iconImage(Expression.get("icon-id")),
-                            PropertyFactory.iconAllowOverlap(true),
-                            PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
-                            PropertyFactory.iconOpacity(0.9f),
-                        )
-                    )
-                    style.addLayer(
-                        SymbolLayer("poi-symbols", "poi-source").withProperties(
-                            PropertyFactory.iconImage(Expression.get("icon-id")),
-                            PropertyFactory.iconAllowOverlap(true),
-                            PropertyFactory.iconIgnorePlacement(true),
-                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
-                            PropertyFactory.iconOpacity(0.9f),
-                        )
-                    )
-                    map.addOnMapClickListener { latLng ->
-                        val pt = map.projection.toScreenLocation(latLng)
-                        val rect = RectF(pt.x - 24f, pt.y - 24f, pt.x + 24f, pt.y + 24f)
-                        // User POIs take highest priority
-                        val poiHit = map.queryRenderedFeatures(rect, "poi-symbols")
-                        if (poiHit.isNotEmpty()) {
-                            val poiId = poiHit[0].getStringProperty("poiId")
-                            if (poiId != null) {
-                                onPoiTappedRef.value(poiId)
-                                return@addOnMapClickListener true
-                            }
-                        }
-                        // Google Places second
-                        val googleHit = map.queryRenderedFeatures(rect, "google-places-symbols")
-                        if (googleHit.isNotEmpty()) {
-                            val placeId = googleHit[0].getStringProperty("poiId")
-                            if (placeId != null) {
-                                onGooglePlaceTappedRef.value(placeId)
-                                return@addOnMapClickListener true
-                            }
-                        }
-                        // Bulk imported POIs third
-                        val bulkHit = map.queryRenderedFeatures(rect, "bulk-poi-symbols")
-                        if (bulkHit.isNotEmpty()) {
-                            val bulkId = bulkHit[0].getStringProperty("poiId")
-                            if (bulkId != null) {
-                                onBulkPoiTappedRef.value(bulkId)
-                                return@addOnMapClickListener true
-                            }
-                        }
-                        // OSM POIs fourth
-                        val osmHit = map.queryRenderedFeatures(rect, "osm-poi-symbols")
-                        if (osmHit.isNotEmpty()) {
-                            val osmId = osmHit[0].getStringProperty("poiId")
-                            if (osmId != null) {
-                                onOsmPoiTappedRef.value(osmId)
-                                return@addOnMapClickListener true
-                            }
-                        }
-                        // Saved routes — wider tolerance for thin lines
-                        val routeRect = RectF(pt.x - 30f, pt.y - 30f, pt.x + 30f, pt.y + 30f)
-                        val routeHit = map.queryRenderedFeatures(routeRect, "saved-routes-lines")
-                        if (routeHit.isNotEmpty()) {
-                            val routeId = routeHit[0].getStringProperty("routeId")
-                            if (routeId != null) {
-                                onRouteTappedRef.value(routeId)
-                                return@addOnMapClickListener true
-                            }
-                        }
-                        false
-                    }
 
-                    // Save camera position whenever the user stops panning/zooming
-                    map.addOnCameraIdleListener {
-                        val pos = map.cameraPosition
-                        val target = pos.target ?: return@addOnCameraIdleListener
-                        onCameraIdleRef.value(
-                            target.latitude,
-                            target.longitude,
-                            pos.zoom,
-                            pos.bearing,
-                            pos.tilt,
-                        )
-                        val bounds = map.projection.visibleRegion.latLngBounds
-                        onBoundsChangedRef.value(
-                            bounds.getLatNorth(),
-                            bounds.getLatSouth(),
-                            bounds.getLonEast(),
-                            bounds.getLonWest(),
-                            target.latitude,
-                            target.longitude,
-                            pos.zoom,
-                            pos.bearing,
-                            pos.tilt,
-                        )
-                    }
-                    // Restore last known viewport (overrides default world view)
-                    initialCamera?.let { cam ->
-                        val restored = CameraPosition.Builder()
-                            .target(org.maplibre.android.geometry.LatLng(cam.lat, cam.lng))
-                            .zoom(cam.zoom)
-                            .bearing(cam.bearing)
-                            .tilt(cam.tilt)
-                            .build()
-                        map.moveCamera(CameraUpdateFactory.newCameraPosition(restored))
-                    }
-                    val dp = context.resources.displayMetrics.density
-
-                    // Glow: tight radial gradient around the dot (background layer, doesn't rotate)
-                    val glowPx = (80 * dp).toInt()
-                    val glowBmp = Bitmap.createBitmap(glowPx, glowPx, Bitmap.Config.ARGB_8888)
-                    android.graphics.Canvas(glowBmp).drawCircle(
-                        glowPx / 2f, glowPx / 2f, glowPx / 2f,
-                        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            shader = android.graphics.RadialGradient(
-                                glowPx / 2f, glowPx / 2f, glowPx / 2f,
-                                intArrayOf(0xCC2979FF.toInt(), 0x442979FF.toInt(), 0x002979FF.toInt()),
-                                floatArrayOf(0f, 0.5f, 1f),
-                                android.graphics.Shader.TileMode.CLAMP,
-                            )
-                        },
-                    )
-
-                    // Cone: sector shape that starts from the dot's outer edge (not the center),
-                    // gradient strong at inner arc → transparent at outer arc
-                    val conePx = (156 * dp).toInt()
-                    val coneBmp = Bitmap.createBitmap(conePx, conePx, Bitmap.Config.ARGB_8888)
-                    android.graphics.Canvas(coneBmp).apply {
-                        val cx = conePx / 2f
-                        val coneAngle = 72f
-                        val halfA = coneAngle / 2.0
-                        val len = cx * 0.92f
-                        // Dot outer edge radius (12dp radius + 2.5dp border + 0.5dp gap)
-                        val innerR = 15f * dp
-                        val innerFraction = innerR / len
-
-                        val conePath = android.graphics.Path().apply {
-                            // Start at left inner edge
-                            moveTo(
-                                (cx + innerR * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
-                                (cx + innerR * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
-                            )
-                            // Line to left outer edge
-                            lineTo(
-                                (cx + len * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
-                                (cx + len * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
-                            )
-                            // Outer arc (clockwise)
-                            arcTo(
-                                android.graphics.RectF(cx - len, cx - len, cx + len, cx + len),
-                                (-90f - coneAngle / 2f), coneAngle,
-                            )
-                            // Line back to right inner edge
-                            lineTo(
-                                (cx + innerR * Math.cos(Math.toRadians(-90.0 + halfA))).toFloat(),
-                                (cx + innerR * Math.sin(Math.toRadians(-90.0 + halfA))).toFloat(),
-                            )
-                            // Inner arc (counter-clockwise back to start)
-                            arcTo(
-                                android.graphics.RectF(cx - innerR, cx - innerR, cx + innerR, cx + innerR),
-                                (-90f + coneAngle / 2f), -coneAngle,
-                            )
-                            close()
-                        }
-                        save()
-                        clipPath(conePath)
-                        drawRect(
-                            0f, 0f, conePx.toFloat(), conePx.toFloat(),
-                            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                                shader = android.graphics.RadialGradient(
-                                    cx, cx, len,
-                                    intArrayOf(
-                                        0x002979FF.toInt(),
-                                        0xEE2979FF.toInt(),
-                                        0x882979FF.toInt(),
-                                        0x002979FF.toInt(),
-                                    ),
-                                    floatArrayOf(0f, innerFraction, 0.6f, 1f),
-                                    android.graphics.Shader.TileMode.CLAMP,
-                                )
-                            },
-                        )
-                        restore()
-                    }
-
-                    // Dot: blue circle with white border (foreground layer, on top)
-                    val dotPx = (24 * dp).toInt()
-                    val dotBmp = Bitmap.createBitmap(dotPx, dotPx, Bitmap.Config.ARGB_8888)
-                    android.graphics.Canvas(dotBmp).apply {
-                        val cx = dotPx / 2f
-                        drawCircle(cx, cx, cx, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
-                        drawCircle(cx, cx, cx - 2.5f * dp, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2979FF.toInt() })
-                    }
-
-                    style.addImage("user-loc-glow", glowBmp)
-                    style.addImage("user-loc-cone", coneBmp)
-                    style.addImage("user-loc-dot", dotBmp)
-
-                    val locationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
-                        context, android.Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    if (locationPermission) {
-                        val locationOptions = org.maplibre.android.location.LocationComponentOptions.builder(context)
-                            .backgroundName("user-loc-glow")
-                            .bearingName("user-loc-cone")
-                            .foregroundName("user-loc-dot")
-                            .backgroundTintColor(null as Int?)
-                            .bearingTintColor(null as Int?)
-                            .foregroundTintColor(null as Int?)
-                            .backgroundStaleName("user-loc-glow")
-                            .foregroundStaleName("user-loc-dot")
-                            .accuracyAlpha(0f)
-                            .pulseEnabled(false)
-                            .build()
-                        val activationOptions = org.maplibre.android.location.LocationComponentActivationOptions
-                            .builder(context, style)
-                            .locationComponentOptions(locationOptions)
-                            .useDefaultLocationEngine(true)
-                            .build()
-                        map.locationComponent.activateLocationComponent(activationOptions)
-                        map.locationComponent.isLocationComponentEnabled = true
-                        map.locationComponent.cameraMode = org.maplibre.android.location.modes.CameraMode.NONE
-                        map.locationComponent.renderMode = org.maplibre.android.location.modes.RenderMode.COMPASS
-                        // onResume() was called before this activation — re-call it so the
-                        // LocationComponent's compass sensor and location engine properly start
-                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
-                            mapView.onResume()
+                // Map-level listeners survive style switches; register them only once.
+                map.addOnMapClickListener { latLng ->
+                    val pt = map.projection.toScreenLocation(latLng)
+                    val rect = RectF(pt.x - 24f, pt.y - 24f, pt.x + 24f, pt.y + 24f)
+                    // User POIs take highest priority
+                    val poiHit = map.queryRenderedFeatures(rect, "poi-symbols")
+                    if (poiHit.isNotEmpty()) {
+                        val poiId = poiHit[0].getStringProperty("poiId")
+                        if (poiId != null) {
+                            onPoiTappedRef.value(poiId)
+                            return@addOnMapClickListener true
                         }
                     }
-                    styleReady.value = true
-                    onMapReady(map)
+                    // Google Places second
+                    val googleHit = map.queryRenderedFeatures(rect, "google-places-symbols")
+                    if (googleHit.isNotEmpty()) {
+                        val placeId = googleHit[0].getStringProperty("poiId")
+                        if (placeId != null) {
+                            onGooglePlaceTappedRef.value(placeId)
+                            return@addOnMapClickListener true
+                        }
+                    }
+                    // Bulk imported POIs third
+                    val bulkHit = map.queryRenderedFeatures(rect, "bulk-poi-symbols")
+                    if (bulkHit.isNotEmpty()) {
+                        val bulkId = bulkHit[0].getStringProperty("poiId")
+                        if (bulkId != null) {
+                            onBulkPoiTappedRef.value(bulkId)
+                            return@addOnMapClickListener true
+                        }
+                    }
+                    // OSM POIs fourth
+                    val osmHit = map.queryRenderedFeatures(rect, "osm-poi-symbols")
+                    if (osmHit.isNotEmpty()) {
+                        val osmId = osmHit[0].getStringProperty("poiId")
+                        if (osmId != null) {
+                            onOsmPoiTappedRef.value(osmId)
+                            return@addOnMapClickListener true
+                        }
+                    }
+                    // Saved routes — wider tolerance for thin lines
+                    val routeRect = RectF(pt.x - 30f, pt.y - 30f, pt.x + 30f, pt.y + 30f)
+                    val routeHit = map.queryRenderedFeatures(routeRect, "saved-routes-lines")
+                    if (routeHit.isNotEmpty()) {
+                        val routeId = routeHit[0].getStringProperty("routeId")
+                        if (routeId != null) {
+                            onRouteTappedRef.value(routeId)
+                            return@addOnMapClickListener true
+                        }
+                    }
+                    false
+                }
+                map.addOnCameraIdleListener {
+                    val pos = map.cameraPosition
+                    val target = pos.target ?: return@addOnCameraIdleListener
+                    onCameraIdleRef.value(
+                        target.latitude,
+                        target.longitude,
+                        pos.zoom,
+                        pos.bearing,
+                        pos.tilt,
+                    )
+                    val bounds = map.projection.visibleRegion.latLngBounds
+                    onBoundsChangedRef.value(
+                        bounds.getLatNorth(),
+                        bounds.getLatSouth(),
+                        bounds.getLonEast(),
+                        bounds.getLonWest(),
+                        target.latitude,
+                        target.longitude,
+                        pos.zoom,
+                        pos.bearing,
+                        pos.tilt,
+                    )
+                }
+
+                map.setStyle(Style.Builder().fromUri(styleUrl(mapStyle))) { style ->
+                    setupMapStyle(
+                        style = style,
+                        map = map,
+                        context = context,
+                        mapView = mapView,
+                        lifecycleOwner = lifecycleOwner,
+                        groupBitmaps = groupBitmaps,
+                        allIconKeys = allIconKeys,
+                        allPainters = allPainters,
+                        placePainterFallback = placePainterFallback,
+                        density = density,
+                        layoutDirection = layoutDirection,
+                        initialCamera = initialCamera,
+                        styleReady = styleReady,
+                        onMapReady = onMapReady,
+                    )
                 }
             }
             mapView
         },
         modifier = modifier,
     )
+}
+
+/**
+ * Adds all custom sources, layers, images and activates the location component for a newly
+ * loaded (or switched) MapLibre style. Safe to call on both first load and style switches.
+ * Map-level listeners (click, cameraIdle) are NOT registered here — they survive style switches
+ * and are registered once in the getMapAsync callback.
+ */
+private fun setupMapStyle(
+    style: Style,
+    map: MapLibreMap,
+    context: android.content.Context,
+    mapView: MapView,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    groupBitmaps: Map<String, Bitmap>,
+    allIconKeys: List<String>,
+    allPainters: Map<String, Painter>,
+    placePainterFallback: Painter,
+    density: Density,
+    layoutDirection: LayoutDirection,
+    initialCamera: ViewportPreference.SavedCamera?,
+    styleReady: androidx.compose.runtime.MutableState<Boolean>,
+    onMapReady: (MapLibreMap) -> Unit,
+) {
+    // Remove hillshade and contour layers baked into outdoor-v2-dark so they can be
+    // added back later as a unified overlay that works across all map styles.
+    listOf(
+        "Hillshade",
+        "Contour index", "Glacier contour index",
+        "Contour", "Glacier contour",
+        "Contour labels", "Glacier contour labels",
+    ).forEach { style.removeLayer(it) }
+
+    // --- GeoJSON sources ---
+    style.addSource(GeoJsonSource("poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+    style.addSource(GeoJsonSource("saved-routes-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+    style.addSource(GeoJsonSource("live-route-source"))
+    style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+    style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+    style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+
+    // --- Layers (bottom → top) ---
+    style.addLayer(
+        LineLayer("saved-routes-lines", "saved-routes-source").withProperties(
+            PropertyFactory.lineColor(Expression.get("routeColor")),
+            PropertyFactory.lineWidth(3f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+        )
+    )
+    style.addLayer(
+        LineLayer("live-route-line", "live-route-source").withProperties(
+            PropertyFactory.lineColor("#FF5722"),
+            PropertyFactory.lineWidth(4f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+        )
+    )
+    style.addLayer(
+        SymbolLayer("osm-poi-symbols", "osm-poi-source").withProperties(
+            PropertyFactory.iconImage(Expression.get("icon-id")),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+            PropertyFactory.iconOpacity(0.9f),
+        )
+    )
+    style.addLayer(
+        SymbolLayer("bulk-poi-symbols", "bulk-poi-source").withProperties(
+            PropertyFactory.iconImage(Expression.get("icon-id")),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+            PropertyFactory.iconOpacity(0.9f),
+        )
+    )
+    style.addLayer(
+        SymbolLayer("google-places-symbols", "google-places-source").withProperties(
+            PropertyFactory.iconImage(Expression.get("icon-id")),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+            PropertyFactory.iconOpacity(0.9f),
+        )
+    )
+    style.addLayer(
+        SymbolLayer("poi-symbols", "poi-source").withProperties(
+            PropertyFactory.iconImage(Expression.get("icon-id")),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            PropertyFactory.iconOpacity(0.9f),
+        )
+    )
+
+    // --- POI pin images ---
+    groupBitmaps.forEach { (id, bitmap) -> style.addImage("pin-$id", bitmap) }
+    allIconKeys.forEach { key ->
+        val painter = allPainters[key] ?: placePainterFallback
+        style.addImage("pin-google-$key", createPoiCircle(key, PoiSource.GOOGLE, painter, density, layoutDirection))
+        style.addImage("pin-osm-$key", createPoiCircle(key, PoiSource.OSM, painter, density, layoutDirection))
+    }
+
+    // --- Restore camera (initial load only; null on style switch to keep current position) ---
+    initialCamera?.let { cam ->
+        map.moveCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(LatLng(cam.lat, cam.lng))
+                    .zoom(cam.zoom)
+                    .bearing(cam.bearing)
+                    .tilt(cam.tilt)
+                    .build()
+            )
+        )
+    }
+
+    // --- User location dot / cone / glow bitmaps ---
+    val dp = context.resources.displayMetrics.density
+
+    val glowPx = (80 * dp).toInt()
+    val glowBmp = Bitmap.createBitmap(glowPx, glowPx, Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(glowBmp).drawCircle(
+        glowPx / 2f, glowPx / 2f, glowPx / 2f,
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.RadialGradient(
+                glowPx / 2f, glowPx / 2f, glowPx / 2f,
+                intArrayOf(0xCC2979FF.toInt(), 0x442979FF.toInt(), 0x002979FF.toInt()),
+                floatArrayOf(0f, 0.5f, 1f),
+                android.graphics.Shader.TileMode.CLAMP,
+            )
+        },
+    )
+
+    val conePx = (156 * dp).toInt()
+    val coneBmp = Bitmap.createBitmap(conePx, conePx, Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(coneBmp).apply {
+        val cx = conePx / 2f
+        val coneAngle = 72f
+        val halfA = coneAngle / 2.0
+        val len = cx * 0.92f
+        val innerR = 15f * dp
+        val innerFraction = innerR / len
+        val conePath = android.graphics.Path().apply {
+            moveTo(
+                (cx + innerR * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
+                (cx + innerR * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
+            )
+            lineTo(
+                (cx + len * Math.cos(Math.toRadians(-90.0 - halfA))).toFloat(),
+                (cx + len * Math.sin(Math.toRadians(-90.0 - halfA))).toFloat(),
+            )
+            arcTo(android.graphics.RectF(cx - len, cx - len, cx + len, cx + len), (-90f - coneAngle / 2f), coneAngle)
+            lineTo(
+                (cx + innerR * Math.cos(Math.toRadians(-90.0 + halfA))).toFloat(),
+                (cx + innerR * Math.sin(Math.toRadians(-90.0 + halfA))).toFloat(),
+            )
+            arcTo(android.graphics.RectF(cx - innerR, cx - innerR, cx + innerR, cx + innerR), (-90f + coneAngle / 2f), -coneAngle)
+            close()
+        }
+        save()
+        clipPath(conePath)
+        drawRect(
+            0f, 0f, conePx.toFloat(), conePx.toFloat(),
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                shader = android.graphics.RadialGradient(
+                    cx, cx, len,
+                    intArrayOf(0x002979FF.toInt(), 0xEE2979FF.toInt(), 0x882979FF.toInt(), 0x002979FF.toInt()),
+                    floatArrayOf(0f, innerFraction, 0.6f, 1f),
+                    android.graphics.Shader.TileMode.CLAMP,
+                )
+            },
+        )
+        restore()
+    }
+
+    val dotPx = (24 * dp).toInt()
+    val dotBmp = Bitmap.createBitmap(dotPx, dotPx, Bitmap.Config.ARGB_8888)
+    android.graphics.Canvas(dotBmp).apply {
+        val cx = dotPx / 2f
+        drawCircle(cx, cx, cx, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+        drawCircle(cx, cx, cx - 2.5f * dp, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2979FF.toInt() })
+    }
+
+    style.addImage("user-loc-glow", glowBmp)
+    style.addImage("user-loc-cone", coneBmp)
+    style.addImage("user-loc-dot", dotBmp)
+
+    // --- Location component ---
+    val locationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+        context, android.Manifest.permission.ACCESS_FINE_LOCATION
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    if (locationPermission) {
+        val locationOptions = org.maplibre.android.location.LocationComponentOptions.builder(context)
+            .backgroundName("user-loc-glow")
+            .bearingName("user-loc-cone")
+            .foregroundName("user-loc-dot")
+            .backgroundTintColor(null as Int?)
+            .bearingTintColor(null as Int?)
+            .foregroundTintColor(null as Int?)
+            .backgroundStaleName("user-loc-glow")
+            .foregroundStaleName("user-loc-dot")
+            .accuracyAlpha(0f)
+            .pulseEnabled(false)
+            .build()
+        val activationOptions = org.maplibre.android.location.LocationComponentActivationOptions
+            .builder(context, style)
+            .locationComponentOptions(locationOptions)
+            .useDefaultLocationEngine(true)
+            .build()
+        map.locationComponent.activateLocationComponent(activationOptions)
+        map.locationComponent.isLocationComponentEnabled = true
+        map.locationComponent.cameraMode = org.maplibre.android.location.modes.CameraMode.NONE
+        map.locationComponent.renderMode = org.maplibre.android.location.modes.RenderMode.COMPASS
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            mapView.onResume()
+        }
+    }
+
+    styleReady.value = true
+    onMapReady(map)
 }

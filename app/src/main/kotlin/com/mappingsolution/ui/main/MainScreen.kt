@@ -90,6 +90,7 @@ fun MainScreen(
     val googlePlacesRaw by viewModel.googlePlacesRepository.pois.collectAsState()
     val osmPoisRaw by viewModel.osmPoiRepository.pois.collectAsState()
     val bulkPoisRaw by viewModel.bulkPois.collectAsState()
+    val currentMapStyle by viewModel.mapStyle.collectAsState()
 
     // Viewport allocation: 20 Google + 20 Overpass/Imported (40 total).
     // Imported claims up to 10 of the 20 Overpass slots; Overpass gets the remainder.
@@ -341,6 +342,7 @@ fun MainScreen(
                     liveRouteColor = (recordingState as? RecordingState.Active)?.color ?: "#FFFF5722",
                     flyToLocation = flyToTarget,
                     initialCamera = viewModel.initialCamera,
+                    mapStyle = currentMapStyle,
                     onCameraIdle = viewModel::saveCameraPosition,
                     onBoundsChanged = { north, south, east, west, lat, lng, zoom, bearing, tilt ->
                         viewModel.onCameraChanged(lat, lng, zoom, bearing, tilt, north, south, east, west)
@@ -411,8 +413,7 @@ fun MainScreen(
                 }
             }
             BottomActionPanel(
-                onAddPoi = {
-                    val hasPerm = ContextCompat.checkSelfPermission(
+                onAddPoi = {                    val hasPerm = ContextCompat.checkSelfPermission(
                         context, Manifest.permission.ACCESS_FINE_LOCATION
                     ) == PackageManager.PERMISSION_GRANTED
                     if (!hasPerm) {
@@ -448,6 +449,8 @@ fun MainScreen(
                 onStopRecording = { recordingViewModel.stopRecording() },
                 onColorChange = { recordingViewModel.setRecordingColor(it) },
                 onOpenLibrary = onOpenLibrary,
+                currentMapStyle = currentMapStyle,
+                onToggleMapStyle = viewModel::toggleMapStyle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface),
