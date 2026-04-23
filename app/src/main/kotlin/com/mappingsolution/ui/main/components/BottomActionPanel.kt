@@ -9,7 +9,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,9 +88,17 @@ fun BottomActionPanel(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val layersTint = if (currentMapStyle == MapStyle.TOPO_DARK)
-                Color(0xFF80CBC4) else Color.White
-            IconButton(onClick = onToggleMapStyle, modifier = Modifier.size(56.dp)) {
+            val layersTint = Color.White
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleMapStyle,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     imageVector = Icons.Default.Layers,
                     contentDescription = "Toggle map style",

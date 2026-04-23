@@ -46,11 +46,13 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.HillshadeLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.RasterDemSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
@@ -613,7 +615,35 @@ private fun setupMapStyle(
     style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
     style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
 
+    // --- Terrain sources (shared across all map styles) ---
+    style.addSource(
+        RasterDemSource("terrain-hillshade-source",
+            "https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${BuildConfig.MAPTILER_API_KEY}",
+            256)
+    )
+
     // --- Layers (bottom → top) ---
+    // Hillshade is inserted below the first symbol (label) layer so map titles always render on top.
+    //
+    // Key tuning insight for dark maps: use RGBA colors with per-channel alpha instead of hex.
+    // This lets shadows and highlights be tuned independently:
+    //   - Shadow at full opacity → deep, pronounced valleys/faces
+    //   - Highlight at low opacity (0.25–0.35) → subtle lit slopes without brightening the overall map
+    //   - Avoid hex grays for highlight (e.g. #888) — they raise overall brightness uniformly
+    //   - exaggeration=1.0 is the MapLibre max; increasing it beyond 1.0 has no effect
+    val hillshadeLayer = HillshadeLayer("terrain-hillshade", "terrain-hillshade-source").withProperties(
+        PropertyFactory.hillshadeIlluminationDirection(315f),
+        PropertyFactory.hillshadeExaggeration(0.5f),
+        PropertyFactory.hillshadeShadowColor("rgba(0,0,0,0.5)"),
+        PropertyFactory.hillshadeHighlightColor("rgba(255,255,255,0.15)"),
+        PropertyFactory.hillshadeAccentColor("rgba(100,100,100,0.2)"),
+    )
+    val firstSymbolLayerId = style.layers.firstOrNull { it is SymbolLayer }?.id
+    if (firstSymbolLayerId != null) {
+        style.addLayerBelow(hillshadeLayer, firstSymbolLayerId)
+    } else {
+        style.addLayer(hillshadeLayer)
+    }
     style.addLayer(
         LineLayer("saved-routes-lines", "saved-routes-source").withProperties(
             PropertyFactory.lineColor(Expression.get("routeColor")),
