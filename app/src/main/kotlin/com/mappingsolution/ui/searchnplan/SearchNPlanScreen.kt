@@ -1,11 +1,11 @@
 package com.mappingsolution.ui.searchnplan
 
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,12 +27,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -44,9 +46,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.LocalContentColor
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.SearchResult
 import com.mappingsolution.ui.searchnplan.components.SearchResultRow
@@ -61,6 +71,7 @@ fun SearchNPlanScreen(
     viewModel: SearchNPlanViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val query by viewModel.searchQuery.collectAsState()
     val results by viewModel.results.collectAsState()
     val destinations by viewModel.destinations.collectAsState()
@@ -91,6 +102,7 @@ fun SearchNPlanScreen(
     }
 
     Scaffold(
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Search & Plan") },
@@ -105,7 +117,25 @@ fun SearchNPlanScreen(
         androidx.compose.foundation.layout.Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
+                .padding(paddingValues)
+                .imePadding()
+                .then(
+                    if (activeRowIndex != null) Modifier.pointerInput(activeRowIndex) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(
+                                pass = PointerEventPass.Final,
+                                requireUnconsumed = false,
+                            )
+                            if (!down.isConsumed) {
+                                val up = awaitPointerEvent(PointerEventPass.Final)
+                                if (up.changes.any { it.changedToUp() && !it.isConsumed }) {
+                                    focusManager.clearFocus()
+                                    viewModel.deactivateRow()
+                                }
+                            }
+                        }
+                    } else Modifier,
+                ),
         ) {
             if (isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
@@ -234,6 +264,22 @@ fun SearchNPlanScreen(
                         }
                     }
                 }
+
+            }
+
+            // ── Rows below the active slot — dimmed, pinned above keyboard ──
+            if (activeRowIndex != null) {
+                val afterActive = destinations.drop(activeRowIndex!! + 1)
+                afterActive.forEach { dest ->
+                    DestinationInputRow(
+                        value = dest.name,
+                        isActive = false,
+                        showDragHandle = destinations.size >= 2,
+                        onRemove = {},
+                        onTap = {},
+                        dimmed = true,
+                    )
+                }
             }
 
             // ── Action buttons ───────────────────────────────────────────
@@ -266,7 +312,7 @@ fun SearchNPlanScreen(
                     }
                 }
             }
-        }
+        }  // end Column
     }
 
     if (showSavePlanDialog) {
@@ -330,82 +376,92 @@ private fun DestinationInputRow(
     focusRequester: FocusRequester? = null,
     dimmed: Boolean = false,
 ) {
+    val dimColor = Color(0xFFBDBDBD)
+
     Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-        if (showDragHandle) {
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                modifier = dragHandleModifier,
-            )
-            Spacer(Modifier.width(4.dp))
-        }
-
-        val trailingIcon: (@Composable () -> Unit)? = if (isActive && value.isNotEmpty()) {
-            { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Default.Close, "Clear") } }
-        } else null
-
-        Box(modifier = Modifier.weight(1f)) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                placeholder = { Text(placeholder) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = trailingIcon,
-                readOnly = !isActive,
-                singleLine = true,
+        CompositionLocalProvider(LocalContentColor provides if (dimmed) dimColor else LocalContentColor.current) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
-            )
-            // Transparent overlay on read-only fields so taps route to our handler
-            if (!isActive && onTap != null) {
-                Box(
+                    .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+            if (showDragHandle) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    modifier = dragHandleModifier,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+
+            val trailingIcon: (@Composable () -> Unit)? = if (isActive && value.isNotEmpty()) {
+                { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Default.Close, "Clear") } }
+            } else null
+
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    placeholder = { Text(placeholder) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = trailingIcon,
+                    readOnly = !isActive,
+                    singleLine = true,
+                    colors = if (dimmed) OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = dimColor,
+                        unfocusedTextColor = dimColor,
+                        unfocusedLeadingIconColor = dimColor,
+                        unfocusedTrailingIconColor = dimColor,
+                        unfocusedPlaceholderColor = dimColor,
+                    ) else OutlinedTextFieldDefaults.colors(),
                     modifier = Modifier
-                        .matchParentSize()
-                        .pointerInput(onTap) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.any { it.pressed }) {
-                                        event.changes.forEach { it.consume() }
-                                        onTap()
+                        .fillMaxWidth()
+                        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
+                )
+                // Transparent overlay on read-only fields so taps route to our handler
+                if (!isActive && onTap != null) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(onTap) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.any { it.pressed }) {
+                                            event.changes.forEach { it.consume() }
+                                            onTap()
+                                        }
                                     }
                                 }
+                            },
+                    )
+                }
+            }
+
+            if (onRemove != null) {
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove destination")
+                }
+            }
+        }
+        }  // end CompositionLocalProvider
+
+        // Invisible touch-blocker when dimmed — no visual painting
+        if (dimmed) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
                             }
-                        },
-                )
-            }
-        }
-
-        if (onRemove != null) {
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove destination")
-            }
-        }
-    }
-
-    // White scrim overlay when dimmed — brightens/washes out the row; also consumes all touches
-    if (dimmed) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.55f))
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            event.changes.forEach { it.consume() }
                         }
-                    }
-                },
-        )
-    }
-}  // end outer Box
+                    },
+            )
+        }
+    }  // end outer Box
 }
 

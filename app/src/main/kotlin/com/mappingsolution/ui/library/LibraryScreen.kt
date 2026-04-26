@@ -478,6 +478,33 @@ fun LibraryScreen(
                 bottom = padding.calculateBottomPadding() + 16.dp,
             ),
         ) {
+            // ── Map Layers ────────────────────────────────────────────────
+            item(key = "map-layers-header") { SectionHeader("Map Layers") }
+            item(key = "map-layer-satellite") {
+                MapLayerRow(
+                    label = "Satellite",
+                    isActive = mapStyle == com.mappingsolution.data.map.MapStyle.SATELLITE,
+                    onTap = { viewModel.setMapStyle(com.mappingsolution.data.map.MapStyle.SATELLITE) },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item(key = "map-layer-vector") {
+                MapLayerRow(
+                    label = "Vector",
+                    isActive = mapStyle == com.mappingsolution.data.map.MapStyle.TOPO_DARK,
+                    onTap = { viewModel.setMapStyle(com.mappingsolution.data.map.MapStyle.TOPO_DARK) },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+            item(key = "map-layer-hillshade") {
+                MapLayerRow(
+                    label = "Hillshading",
+                    isActive = hillshadeVisible,
+                    onTap = { viewModel.toggleHillshade() },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+
             // ── Groups & POIs (includes live POI layers at top) ───────────
             if (googlePlacesGroup != null || osmPoiGroup != null ||
                 filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()
@@ -714,6 +741,28 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+// ── Map layer toggle row ──────────────────────────────────────────────────────
+
+@Composable
+private fun MapLayerRow(
+    label: String,
+    isActive: Boolean,
+    onTap: () -> Unit,
+) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onTap),
+        headlineContent = { Text(label, style = MaterialTheme.typography.bodyLarge) },
+        trailingContent = {
+            Icon(
+                imageVector = if (isActive) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                contentDescription = if (isActive) "Visible" else "Hidden",
+                tint = if (isActive) MaterialTheme.colorScheme.primary
+                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+            )
+        },
     )
 }
 
