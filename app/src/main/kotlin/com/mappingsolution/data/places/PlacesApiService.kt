@@ -95,6 +95,81 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
     }
 
     /**
+     * Searches for places matching [query] using the Places Text Search API,
+     * biased toward [biasLat]/[biasLng] within [radiusMeters].
+     * Returns at most 5 results.
+     */
+    suspend fun searchText(
+        query: String,
+        biasLat: Double,
+        biasLng: Double,
+        radiusMeters: Double = 5000.0,
+    ): List<Poi> {
+        val apiKey = BuildConfig.GOOGLE_PLACES_API_KEY
+        if (apiKey.isBlank()) {
+            Log.w("PlacesApiService", "GOOGLE_PLACES_API_KEY is not set; skipping search")
+            return emptyList()
+        }
+        val body = JSONObject().apply {
+            put("textQuery", query)
+            put("maxResultCount", 5)
+            put("locationBias", JSONObject().apply {
+                put("circle", JSONObject().apply {
+                    put("center", JSONObject().apply {
+                        put("latitude", biasLat)
+                        put("longitude", biasLng)
+                    })
+                    put("radius", radiusMeters)
+                })
+            })
+        }.toString()
+
+        val request = Request.Builder()
+            .url("https://places.googleapis.com/v1/places:searchText")
+            .addHeader("X-Goog-Api-Key", apiKey)
+            .addHeader("X-Goog-FieldMask", GOOGLE_PLACES_FIELD_MASK)
+            .post(body.toRequestBody(jsonMediaType))
+            .build()
+
+        return runCatching {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e("PlacesApiService", "searchText HTTP ${response.code}: ${response.body?.string()}")
+                    return@runCatching emptyList()
+                }
+                val json = JSONObject(response.body!!.string())
+                val placesArray = json.optJSONArray("places") ?: return@runCatching emptyList()
+                val now = System.currentTimeMillis()
+                (0 until placesArray.length()).mapNotNull { i ->
+                    runCatching {
+                        val place = placesArray.getJSONObject(i)
+                        val location = place.getJSONObject("location")
+                        val name = place.getJSONObject("displayName").getString("text")
+                        val typesArray = place.optJSONArray("types")
+                        val types = if (typesArray != null) {
+                            (0 until typesArray.length()).map { typesArray.getString(it) }
+                        } else emptyList()
+                        val resolvedIconKey = PoiIconResolver.resolveForGoogleType(types)
+                        Poi(
+                            id = place.getString("id"),
+                            groupId = GOOGLE_PLACES_GROUP_ID,
+                            name = name,
+                            lat = location.getDouble("latitude"),
+                            lng = location.getDouble("longitude"),
+                            iconKey = resolvedIconKey,
+                            createdAt = now,
+                            updatedAt = now,
+                        )
+                    }.getOrNull()
+                }
+            }
+        }.getOrElse { e ->
+            Log.e("PlacesApiService", "searchText failed", e)
+            emptyList()
+        }
+    }
+
+    /**
      * Fetches up to 3 photo URLs for a specific place by ID.
      * Photo URL format: https://places.googleapis.com/v1/{photoName}/media?maxWidthPx=800&key={key}
      */

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ fun BottomActionPanel(
     onAddPoi: () -> Unit,
     onRecordRoute: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenSearch: () -> Unit = {},
     currentMapStyle: MapStyle = MapStyle.SATELLITE,
     onToggleMapStyle: () -> Unit = {},
     recordingState: RecordingState = RecordingState.Idle,
@@ -134,6 +136,15 @@ fun BottomActionPanel(
                 Icon(
                     imageVector = Icons.Default.Folder,
                     contentDescription = "Open library",
+                    modifier = Modifier.size(32.dp),
+                    tint = Color.White,
+                )
+            }
+
+            IconButton(onClick = onOpenSearch, modifier = Modifier.size(56.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search & Plan",
                     modifier = Modifier.size(32.dp),
                     tint = Color.White,
                 )

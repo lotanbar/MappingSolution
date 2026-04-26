@@ -71,6 +71,7 @@ fun MainScreen(
     onOpenLibrary: () -> Unit,
     onAddPoi: (lat: Double, lng: Double) -> Unit,
     onPoiTapped: (poiId: String) -> Unit,
+    onOpenSearch: () -> Unit = {},
     onRouteTapped: (routeId: String) -> Unit = {},
     onGooglePlaceTapped: (placeId: String) -> Unit = {},
     onOsmPoiTapped: (osmId: String) -> Unit = {},
@@ -451,6 +452,7 @@ fun MainScreen(
                 onOpenLibrary = onOpenLibrary,
                 currentMapStyle = currentMapStyle,
                 onToggleMapStyle = viewModel::toggleMapStyle,
+                onOpenSearch = onOpenSearch,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface),

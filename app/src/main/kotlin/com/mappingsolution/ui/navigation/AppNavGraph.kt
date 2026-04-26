@@ -24,6 +24,7 @@ import com.mappingsolution.ui.permission.StoragePermissionScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
 import com.mappingsolution.ui.poi.media.MediaPreviewScreen
 import com.mappingsolution.ui.recording.RouteFinalizeScreen
+import com.mappingsolution.ui.searchnplan.SearchNPlanScreen
 
 private const val ROUTE_MAIN = "main"
 private const val ROUTE_STORAGE_PERMISSION = "storage_permission"
@@ -38,6 +39,7 @@ private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
 private const val ROUTE_ROUTE_FINALIZE = "route_finalize/{routeId}"
 /** Edit a saved route from the Library (no discard guard). */
 private const val ROUTE_ROUTE_EDIT = "route_edit/{routeId}"
+private const val ROUTE_SEARCH_N_PLAN = "search_n_plan"
 
 private const val KEY_GROUP_ID = "groupId"
 private const val KEY_POI_ID = "poiId"
@@ -80,6 +82,7 @@ fun AppNavGraph() {
                 onOsmPoiTapped = { osmId -> navController.navigate("item_detail/osm_poi/$osmId") },
                 onBulkPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
                 onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
+                onOpenSearch = { navController.navigate(ROUTE_SEARCH_N_PLAN) },
             )
         }
 
@@ -238,6 +241,10 @@ fun AppNavGraph() {
                 isLibraryEdit = true,
                 onDone = { navController.popBackStack() },
             )
+        }
+
+        composable(ROUTE_SEARCH_N_PLAN) {
+            SearchNPlanScreen(onNavigateBack = { navController.popBackStack() })
         }
     }
 }
