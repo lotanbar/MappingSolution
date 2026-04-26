@@ -169,6 +169,7 @@ fun SearchNPlanScreen(
                                     onAddToPlan = { viewModel.addDestination(result) },
                                     onOpenDetail = onOpenDetail?.let { callback ->
                                         {
+                                            viewModel.selectResultForPreview(result)
                                             val type = when (result) {
                                                 is SearchResult.PersonalPoi -> "poi"
                                                 is SearchResult.ImportedPoi -> "poi"
@@ -250,6 +251,7 @@ fun SearchNPlanScreen(
                                 onAddToPlan = { viewModel.addDestination(result) },
                                 onOpenDetail = onOpenDetail?.let { callback ->
                                     {
+                                        viewModel.selectResultForPreview(result)
                                         val type = when (result) {
                                             is SearchResult.PersonalPoi -> "poi"
                                             is SearchResult.ImportedPoi -> "poi"

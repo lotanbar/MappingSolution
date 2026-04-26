@@ -9,6 +9,7 @@ import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.map.MapHolder
 import com.mappingsolution.data.map.MapLayersState
 import com.mappingsolution.data.map.MapStyle
+import com.mappingsolution.data.map.SearchPreviewState
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
@@ -45,6 +46,7 @@ class MainViewModel @Inject constructor(
     val osmPoiRepository: OsmPoiRepository,
     val bulkPoiRepository: BulkPoiRepository,
     private val mapLayersState: MapLayersState,
+    private val searchPreviewState: SearchPreviewState,
 ) : ViewModel() {
 
     val groups: StateFlow<List<Group>> = groupRepository.observeAll()
@@ -88,6 +90,11 @@ class MainViewModel @Inject constructor(
 
     val mapStyle: MutableStateFlow<MapStyle> = mapLayersState.mapStyle
     val hillshadeVisible: MutableStateFlow<Boolean> = mapLayersState.hillshadeVisible
+
+    /** Lat/lng of the search result last tapped in SearchNPlan — drives map camera + preview pin. */
+    val searchPreviewLocation: StateFlow<Pair<Double, Double>?> =
+        searchPreviewState.previewLocation
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun toggleMapStyle() {
         val next = if (mapLayersState.mapStyle.value == MapStyle.SATELLITE) MapStyle.TOPO_DARK else MapStyle.SATELLITE

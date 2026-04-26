@@ -93,6 +93,7 @@ fun MainScreen(
     val bulkPoisRaw by viewModel.bulkPois.collectAsState()
     val currentMapStyle by viewModel.mapStyle.collectAsState()
     val hillshadeVisible by viewModel.hillshadeVisible.collectAsState()
+    val searchPreviewLocation by viewModel.searchPreviewLocation.collectAsState()
 
     // Viewport allocation: 20 Google + 20 Overpass/Imported (40 total).
     // Imported claims up to 10 of the 20 Overpass slots; Overpass gets the remainder.
@@ -343,6 +344,7 @@ fun MainScreen(
                     liveRoutePoints = (recordingState as? RecordingState.Active)?.points ?: emptyList(),
                     liveRouteColor = (recordingState as? RecordingState.Active)?.color ?: "#FFFF5722",
                     flyToLocation = flyToTarget,
+                    searchPreviewLocation = searchPreviewLocation,
                     initialCamera = viewModel.initialCamera,
                     mapStyle = currentMapStyle,
                     hillshadeVisible = hillshadeVisible,

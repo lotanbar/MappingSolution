@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.map.MapHolder
+import com.mappingsolution.data.map.SearchPreviewState
 import com.mappingsolution.data.model.DestinationSource
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.PlanDestination
@@ -32,6 +33,7 @@ class SearchNPlanViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val planRepository: PlanFileRepository,
     private val mapHolder: MapHolder,
+    private val searchPreviewState: SearchPreviewState,
     private val osmPoiRepository: OsmPoiRepository,
     private val googlePlacesRepository: GooglePlacesRepository,
     savedStateHandle: SavedStateHandle,
@@ -180,8 +182,22 @@ class SearchNPlanViewModel @Inject constructor(
         }
     }
 
-    /** Saves the destination list as a named plan. Emits [savedEvent] when done. */
-    fun savePlan(nameOverride: String? = null) {
+    /** Updates the map preview pin to the tapped result's location. */
+    fun selectResultForPreview(result: SearchResult) {
+        searchPreviewState.previewLocation.value = result.poi.lat to result.poi.lng
+    }
+
+    /** Clears the map preview pin — called when this screen leaves the back stack. */
+    fun clearPreview() {
+        searchPreviewState.previewLocation.value = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        clearPreview()
+    }
+
+    /** Saves the destination list as a named plan. Emits [savedEvent] when done. */    fun savePlan(nameOverride: String? = null) {
         val name = nameOverride
             ?: _loadedPlanName.value
             ?: "Plan — ${SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date())}"

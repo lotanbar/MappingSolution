@@ -153,6 +153,7 @@ fun MapComponent(
     liveRoutePoints: List<RecordingPoint> = emptyList(),
     liveRouteColor: String = "#FFFF5722",
     flyToLocation: Pair<Double, Double>? = null,
+    searchPreviewLocation: Pair<Double, Double>? = null,
     initialCamera: ViewportPreference.SavedCamera? = null,
     mapStyle: MapStyle = MapStyle.SATELLITE,
     hillshadeVisible: Boolean = true,
@@ -325,6 +326,30 @@ fun MapComponent(
             .bearing(0.0)
             .build()
         map.animateCamera(CameraUpdateFactory.newCameraPosition(camera), 1200)
+    }
+
+    // Search preview: fly to result + show red pin; clear pin when null
+    LaunchedEffect(searchPreviewLocation, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        val source = style.getSource("search-preview-source") as? GeoJsonSource ?: return@LaunchedEffect
+        if (searchPreviewLocation != null) {
+            val (lat, lng) = searchPreviewLocation
+            source.setGeoJson(
+                FeatureCollection.fromFeatures(
+                    listOf(Feature.fromGeometry(Point.fromLngLat(lng, lat)))
+                )
+            )
+            val camera = CameraPosition.Builder()
+                .target(LatLng(lat, lng))
+                .zoom(15.0)
+                .bearing(0.0)
+                .build()
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(camera), 900)
+        } else {
+            source.setGeoJson(FeatureCollection.fromFeatures(emptyList<Feature>()))
+        }
     }
 
     // Re-render saved route polylines whenever routes/points/visibility change
@@ -628,6 +653,7 @@ private fun setupMapStyle(
     style.addSource(GeoJsonSource("osm-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
     style.addSource(GeoJsonSource("bulk-poi-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
     style.addSource(GeoJsonSource("google-places-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
+    style.addSource(GeoJsonSource("search-preview-source", FeatureCollection.fromFeatures(emptyList<Feature>())))
 
     // --- Terrain sources (shared across all map styles) ---
     style.addSource(
@@ -710,6 +736,15 @@ private fun setupMapStyle(
             PropertyFactory.iconOpacity(0.9f),
         )
     )
+    style.addLayer(
+        SymbolLayer("search-preview-symbol", "search-preview-source").withProperties(
+            PropertyFactory.iconImage("pin-search-preview"),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            PropertyFactory.iconOpacity(1f),
+        )
+    )
 
     // --- POI pin images ---
     groupBitmaps.forEach { (id, bitmap) -> style.addImage("pin-$id", bitmap) }
@@ -718,6 +753,8 @@ private fun setupMapStyle(
         style.addImage("pin-google-$key", createPoiCircle(key, PoiSource.GOOGLE, painter, density, layoutDirection))
         style.addImage("pin-osm-$key", createPoiCircle(key, PoiSource.OSM, painter, density, layoutDirection))
     }
+    // Distinct red pin used for the search preview marker
+    style.addImage("pin-search-preview", createPoiPin("#F44336", placePainterFallback, density, layoutDirection))
 
     // --- Restore camera (initial load only; null on style switch to keep current position) ---
     initialCamera?.let { cam ->
