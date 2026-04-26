@@ -155,6 +155,7 @@ fun MapComponent(
     flyToLocation: Pair<Double, Double>? = null,
     initialCamera: ViewportPreference.SavedCamera? = null,
     mapStyle: MapStyle = MapStyle.SATELLITE,
+    hillshadeVisible: Boolean = true,
     onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
     onBoundsChanged: (north: Double, south: Double, east: Double, west: Double, lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onPoiTapped: (String) -> Unit = {},
@@ -360,6 +361,19 @@ fun MapComponent(
         }
         (style.getLayer("live-route-line") as? LineLayer)
             ?.setProperties(PropertyFactory.lineColor(mapColor))
+    }
+
+    // Toggle hillshade layer visibility without reloading the map style
+    LaunchedEffect(hillshadeVisible, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+        (style.getLayer("terrain-hillshade") as? HillshadeLayer)
+            ?.setProperties(
+                PropertyFactory.visibility(
+                    if (hillshadeVisible) Property.VISIBLE else Property.NONE
+                )
+            )
     }
 
     // Re-render live route polyline whenever points change

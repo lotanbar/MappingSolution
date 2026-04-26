@@ -27,6 +27,14 @@ class OsmPoiRepository @Inject constructor(
 
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
+    /** Merges POIs returned from a text search so the detail screen can look them up by ID. */
+    fun registerSearchPois(pois: List<Poi>) {
+        if (pois.isEmpty()) return
+        val existing = _pois.value.associateBy { it.id }.toMutableMap()
+        pois.forEach { existing.putIfAbsent(it.id, it) }
+        _pois.value = existing.values.toList()
+    }
+
     /**
      * Fetches OSM natural/historic POIs for the given viewport bounds using strip-based fetching.
      * Cache TTL is 30 days — natural features don't move.

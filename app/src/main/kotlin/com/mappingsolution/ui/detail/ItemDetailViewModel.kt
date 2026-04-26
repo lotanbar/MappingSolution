@@ -7,6 +7,7 @@ import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
+import com.mappingsolution.data.model.DestinationSource
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
@@ -28,6 +29,7 @@ sealed interface DetailItem {
         val group: Group?,
         val mediaPaths: List<String>,
         val isReadOnly: Boolean = false,
+        val sourceType: DestinationSource = DestinationSource.PERSONAL,
     ) : DetailItem
 
     data class RouteDetail(val route: Route) : DetailItem
@@ -73,11 +75,12 @@ class ItemDetailViewModel @Inject constructor(
     }
 
     private suspend fun loadPoi() {
-        val poi = poiRepository.getById(id) ?: bulkPoiRepository.getById(id) ?: run {
+        val personalPoi = poiRepository.getById(id)
+        val poi = personalPoi ?: bulkPoiRepository.getById(id) ?: run {
             _state.update { it.copy(isLoading = false) }
             return
         }
-        val isBulk = poiRepository.getById(id) == null
+        val isBulk = personalPoi == null
         val group = poi.groupId?.let { groupRepository.getById(it) }
         val mediaDir = storageManager.getPoiMediaDir(poi.name, poi.id)
         val absolutePaths = if (isBulk) {
@@ -88,7 +91,13 @@ class ItemDetailViewModel @Inject constructor(
         }
         _state.update {
             ItemDetailState(
-                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = absolutePaths, isReadOnly = isBulk),
+                item = DetailItem.PoiDetail(
+                    poi = poi,
+                    group = group,
+                    mediaPaths = absolutePaths,
+                    isReadOnly = isBulk,
+                    sourceType = if (isBulk) DestinationSource.IMPORTED else DestinationSource.PERSONAL,
+                ),
                 isLoading = false,
             )
         }
@@ -105,7 +114,13 @@ class ItemDetailViewModel @Inject constructor(
         }.getOrElse { emptyList() }
         _state.update {
             ItemDetailState(
-                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = photoUrls, isReadOnly = true),
+                item = DetailItem.PoiDetail(
+                    poi = poi,
+                    group = group,
+                    mediaPaths = photoUrls,
+                    isReadOnly = true,
+                    sourceType = DestinationSource.GOOGLE,
+                ),
                 isLoading = false,
             )
         }
@@ -119,7 +134,13 @@ class ItemDetailViewModel @Inject constructor(
         val group = poi.groupId?.let { groupRepository.getById(it) }
         _state.update {
             ItemDetailState(
-                item = DetailItem.PoiDetail(poi = poi, group = group, mediaPaths = emptyList(), isReadOnly = true),
+                item = DetailItem.PoiDetail(
+                    poi = poi,
+                    group = group,
+                    mediaPaths = emptyList(),
+                    isReadOnly = true,
+                    sourceType = DestinationSource.OSM,
+                ),
                 isLoading = false,
             )
         }

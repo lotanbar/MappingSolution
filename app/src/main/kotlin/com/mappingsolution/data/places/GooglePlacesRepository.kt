@@ -30,7 +30,13 @@ class GooglePlacesRepository @Inject constructor(
 
     fun getById(id: String): Poi? = _pois.value.find { it.id == id }
 
-    /** Fetches photo URLs for a specific Google Place (up to 3). Empty list on any error. */
+    /** Merges POIs returned from a text search so the detail screen can look them up by ID. */
+    fun registerSearchPois(pois: List<Poi>) {
+        if (pois.isEmpty()) return
+        val existing = _pois.value.associateBy { it.id }.toMutableMap()
+        pois.forEach { existing.putIfAbsent(it.id, it) }
+        _pois.value = existing.values.toList()
+    }
     suspend fun fetchPhotoUrls(placeId: String): List<String> =
         withContext(Dispatchers.IO) { api.fetchPlacePhotoUrls(placeId) }
 

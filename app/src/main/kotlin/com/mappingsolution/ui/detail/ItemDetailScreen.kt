@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,6 +43,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.model.DestinationSource
+import com.mappingsolution.data.model.PlanDestination
 import com.mappingsolution.ui.poi.media.PoiMediaGallery
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,6 +58,9 @@ fun ItemDetailScreen(
     onNavigateToEditPoi: (poiId: String) -> Unit,
     onNavigateToEditRoute: (routeId: String) -> Unit,
     onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
+    fromSearch: Boolean = false,
+    onNavigate: ((lat: Double, lng: Double) -> Unit)? = null,
+    onAddToPlan: ((PlanDestination) -> Unit)? = null,
     viewModel: ItemDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -96,11 +102,14 @@ fun ItemDetailScreen(
                 item = item,
                 modifier = Modifier.padding(padding),
                 isReadOnly = item.isReadOnly,
+                fromSearch = fromSearch,
                 onNavigateBack = onNavigateBack,
                 onNavigateToEdit = onNavigateToEditPoi,
                 onOpenMediaPreview = onOpenMediaPreview,
                 onDeleteClick = { viewModel.deletePoi(it) },
                 onRemoveMedia = { viewModel.removePoiMediaItem(it) },
+                onNavigate = onNavigate,
+                onAddToPlan = onAddToPlan,
                 context = context,
             )
 
@@ -121,11 +130,14 @@ private fun PoiDetailContent(
     item: DetailItem.PoiDetail,
     modifier: Modifier = Modifier,
     isReadOnly: Boolean = false,
+    fromSearch: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToEdit: (poiId: String) -> Unit,
     onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
     onDeleteClick: (onDeleted: () -> Unit) -> Unit,
     onRemoveMedia: (index: Int) -> Unit,
+    onNavigate: ((lat: Double, lng: Double) -> Unit)? = null,
+    onAddToPlan: ((PlanDestination) -> Unit)? = null,
     context: android.content.Context,
 ) {
     val poi = item.poi
@@ -175,29 +187,46 @@ private fun PoiDetailContent(
             }
         }
 
-        DetailBottomBar(
-            modifier = Modifier.align(Alignment.BottomCenter),
-            onEditClick = { onNavigateToEdit(poi.id) },
-            editLabel = "Edit POI",
-            deleteLabel = "Remove POI",
-            isReadOnly = isReadOnly,
-            onDeleteClick = {
-                val now = System.currentTimeMillis()
-                if (now - lastDeleteClickTime < 2000) {
-                    onDeleteClick {
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            onNavigateBack()
-                        }, 100)
+        if (fromSearch) {
+            SearchContextBottomBar(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                onNavigateClick = { onNavigate?.invoke(poi.lat, poi.lng) },
+                onAddToPlanClick = {
+                    val dest = PlanDestination(
+                        sourceType = item.sourceType,
+                        sourceId = poi.id,
+                        name = poi.name,
+                        lat = poi.lat,
+                        lng = poi.lng,
+                    )
+                    onAddToPlan?.invoke(dest)
+                },
+            )
+        } else {
+            DetailBottomBar(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                onEditClick = { onNavigateToEdit(poi.id) },
+                editLabel = "Edit POI",
+                deleteLabel = "Remove POI",
+                isReadOnly = isReadOnly,
+                onDeleteClick = {
+                    val now = System.currentTimeMillis()
+                    if (now - lastDeleteClickTime < 2000) {
+                        onDeleteClick {
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                onNavigateBack()
+                            }, 100)
+                        }
+                    } else {
+                        lastDeleteClickTime = now
+                        android.widget.Toast.makeText(
+                            context, "Tap again quickly to remove POI", android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }
-                } else {
-                    lastDeleteClickTime = now
-                    android.widget.Toast.makeText(
-                        context, "Tap again quickly to remove POI", android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            },
-            context = context,
-        )
+                },
+                context = context,
+            )
+        }
     }
 }
 
@@ -259,6 +288,39 @@ private fun RouteDetailContent(
             },
             context = context,
         )
+    }
+}
+
+@Composable
+private fun SearchContextBottomBar(
+    modifier: Modifier = Modifier,
+    onNavigateClick: () -> Unit,
+    onAddToPlanClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = onNavigateClick,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) {
+                Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Navigate")
+            }
+            Button(
+                onClick = onAddToPlanClick,
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) {
+                Text("Add to Plan")
+            }
+        }
     }
 }
 

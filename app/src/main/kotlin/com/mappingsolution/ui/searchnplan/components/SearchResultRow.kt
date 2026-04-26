@@ -1,6 +1,7 @@
 package com.mappingsolution.ui.searchnplan.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +33,7 @@ fun SearchResultRow(
     result: SearchResult,
     onNavigate: () -> Unit,
     onAddToPlan: (() -> Unit)? = null,
+    onOpenDetail: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val (badgeText, badgeColor) = when (result) {
@@ -47,32 +49,39 @@ fun SearchResultRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = badgeText,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
+        Row(
             modifier = Modifier
-                .background(badgeColor, RoundedCornerShape(4.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-        )
+                .weight(1f)
+                .then(if (onOpenDetail != null) Modifier.clickable { onOpenDetail() } else Modifier)
+                .padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = badgeText,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                modifier = Modifier
+                    .background(badgeColor, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
 
-        Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.dp))
 
-        Icon(
-            imageVector = resolveIcon(result.poi.iconKey),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-        )
+            Icon(
+                imageVector = resolveIcon(result.poi.iconKey),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
 
-        Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.dp))
 
-        Text(
-            text = result.poi.name,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+            Text(
+                text = result.poi.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
         IconButton(
             onClick = { onAddToPlan?.invoke() },

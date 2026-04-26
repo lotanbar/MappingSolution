@@ -92,6 +92,7 @@ fun MainScreen(
     val osmPoisRaw by viewModel.osmPoiRepository.pois.collectAsState()
     val bulkPoisRaw by viewModel.bulkPois.collectAsState()
     val currentMapStyle by viewModel.mapStyle.collectAsState()
+    val hillshadeVisible by viewModel.hillshadeVisible.collectAsState()
 
     // Viewport allocation: 20 Google + 20 Overpass/Imported (40 total).
     // Imported claims up to 10 of the 20 Overpass slots; Overpass gets the remainder.
@@ -344,6 +345,7 @@ fun MainScreen(
                     flyToLocation = flyToTarget,
                     initialCamera = viewModel.initialCamera,
                     mapStyle = currentMapStyle,
+                    hillshadeVisible = hillshadeVisible,
                     onCameraIdle = viewModel::saveCameraPosition,
                     onBoundsChanged = { north, south, east, west, lat, lng, zoom, bearing, tilt ->
                         viewModel.onCameraChanged(lat, lng, zoom, bearing, tilt, north, south, east, west)
@@ -450,8 +452,6 @@ fun MainScreen(
                 onStopRecording = { recordingViewModel.stopRecording() },
                 onColorChange = { recordingViewModel.setRecordingColor(it) },
                 onOpenLibrary = onOpenLibrary,
-                currentMapStyle = currentMapStyle,
-                onToggleMapStyle = viewModel::toggleMapStyle,
                 onOpenSearch = onOpenSearch,
                 modifier = Modifier
                     .fillMaxWidth()

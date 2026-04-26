@@ -9,10 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocation
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -37,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.recording.RecordingState
 
 @Composable
@@ -46,8 +41,6 @@ fun BottomActionPanel(
     onRecordRoute: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSearch: () -> Unit = {},
-    currentMapStyle: MapStyle = MapStyle.SATELLITE,
-    onToggleMapStyle: () -> Unit = {},
     recordingState: RecordingState = RecordingState.Idle,
     onPauseRecording: () -> Unit = {},
     onResumeRecording: () -> Unit = {},
@@ -90,25 +83,6 @@ fun BottomActionPanel(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val layersTint = Color.White
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onToggleMapStyle,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Layers,
-                    contentDescription = "Toggle map style",
-                    modifier = Modifier.size(32.dp),
-                    tint = layersTint,
-                )
-            }
-
             IconButton(onClick = onAddPoi, modifier = Modifier.size(56.dp)) {
                 Icon(
                     imageVector = Icons.Default.AddLocation,

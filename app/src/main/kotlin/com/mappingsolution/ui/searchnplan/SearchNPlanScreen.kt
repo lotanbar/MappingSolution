@@ -1,6 +1,7 @@
 package com.mappingsolution.ui.searchnplan
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -46,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.model.SearchResult
 import com.mappingsolution.ui.searchnplan.components.SearchResultRow
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -54,6 +57,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 @Composable
 fun SearchNPlanScreen(
     onNavigateBack: () -> Unit,
+    onOpenDetail: ((type: String, id: String) -> Unit)? = null,
     viewModel: SearchNPlanViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -80,6 +84,11 @@ fun SearchNPlanScreen(
 
     // Drag handles only visible when ≥2 destinations and no row is being edited
     val showDragHandles = destinations.size >= 2 && activeRowIndex == null
+
+    // Back gesture aborts active search instead of navigating away
+    BackHandler(enabled = activeRowIndex != null) {
+        viewModel.deactivateRow()
+    }
 
     Scaffold(
         topBar = {
@@ -108,39 +117,98 @@ fun SearchNPlanScreen(
                 destinations.forEachIndexed { index, dest ->
                     val isActive = activeRowIndex == index
 
-                    if (!isActive && activeRowIndex == null) {
-                        // Planning mode – reorderable input box
-                        item(key = "dest_${dest.id}") {
-                            ReorderableItem(reorderableState, key = "dest_${dest.id}") { isDragging ->
-                                val elevation by animateDpAsState(
-                                    targetValue = if (isDragging) 4.dp else 0.dp,
-                                    label = "drag_elevation",
+                    when {
+                        isActive -> {
+                            // Active search field for this slot
+                            item(key = "dest_${dest.id}") {
+                                DestinationInputRow(
+                                    value = query,
+                                    isActive = true,
+                                    focusRequester = focusRequester,
+                                    onValueChange = viewModel::onQueryChange,
                                 )
-                                Surface(shadowElevation = elevation) {
-                                    DestinationInputRow(
-                                        value = dest.name,
-                                        isActive = false,
-                                        hasExistingDest = true,
-                                        showDragHandle = showDragHandles,
-                                        dragHandleModifier = Modifier.draggableHandle(),
-                                        onTap = { viewModel.activateRow(index) },
-                                        onRemove = { viewModel.removeDestination(dest.id) },
+                            }
+                            items(results, key = { "result_${it.poi.id}" }) { result ->
+                                SearchResultRow(
+                                    result = result,
+                                    onNavigate = {
+                                        NavigationIntentHelper.launchSingleNavigation(
+                                            context, result.poi.lat, result.poi.lng,
+                                        )
+                                    },
+                                    onAddToPlan = { viewModel.addDestination(result) },
+                                    onOpenDetail = onOpenDetail?.let { callback ->
+                                        {
+                                            val type = when (result) {
+                                                is SearchResult.PersonalPoi -> "poi"
+                                                is SearchResult.ImportedPoi -> "poi"
+                                                is SearchResult.OsmPoi -> "osm_poi"
+                                                is SearchResult.GooglePlace -> "google_place"
+                                            }
+                                            callback(type, result.poi.id)
+                                        }
+                                    },
+                                )
+                                HorizontalDivider()
+                            }
+                        }
+
+                        activeRowIndex != null && index > activeRowIndex!! -> {
+                            // Row below the active slot — hidden while editing
+                        }
+
+                        activeRowIndex != null -> {
+                            // Row above the active slot — same visual as planning mode but grayed out
+                            item(key = "dest_${dest.id}") {
+                                DestinationInputRow(
+                                    value = dest.name,
+                                    isActive = false,
+                                    showDragHandle = destinations.size >= 2,
+                                    onRemove = {},
+                                    onTap = {},
+                                    dimmed = true,
+                                )
+                            }
+                        }
+
+                        else -> {
+                            // Planning mode – reorderable input box
+                            item(key = "dest_${dest.id}") {
+                                ReorderableItem(reorderableState, key = "dest_${dest.id}") { isDragging ->
+                                    val elevation by animateDpAsState(
+                                        targetValue = if (isDragging) 4.dp else 0.dp,
+                                        label = "drag_elevation",
                                     )
+                                    Surface(shadowElevation = elevation) {
+                                        DestinationInputRow(
+                                            value = dest.name,
+                                            isActive = false,
+                                            showDragHandle = showDragHandles,
+                                            dragHandleModifier = Modifier.draggableHandle(),
+                                            onTap = { viewModel.activateRow(index, prefill = dest.name) },
+                                            onRemove = { viewModel.removeDestination(dest.id) },
+                                        )
+                                    }
                                 }
                             }
                         }
-                    } else if (isActive) {
-                        // Active search field for this slot
-                        item(key = "dest_${dest.id}") {
-                            DestinationInputRow(
-                                value = query,
-                                isActive = true,
-                                hasExistingDest = true,
-                                focusRequester = focusRequester,
-                                onValueChange = viewModel::onQueryChange,
-                                onDeactivate = viewModel::deactivateRow,
-                            )
-                        }
+                    }
+                }
+
+                // ── Ghost row — hidden while any row is being edited ─────────
+                val isGhostActive = activeRowIndex == destinations.size
+                if (activeRowIndex == null || isGhostActive) {
+                    item(key = "ghost") {
+                        DestinationInputRow(
+                            value = if (isGhostActive) query else "",
+                            isActive = isGhostActive,
+                            placeholder = if (destinations.isEmpty()) "Add a destination…" else "Add another destination…",
+                            focusRequester = if (isGhostActive) focusRequester else null,
+                            onValueChange = viewModel::onQueryChange,
+                            onTap = if (!isGhostActive) ({ viewModel.activateRow(destinations.size) }) else null,
+                        )
+                    }
+                    if (isGhostActive) {
                         items(results, key = { "result_${it.poi.id}" }) { result ->
                             SearchResultRow(
                                 result = result,
@@ -150,48 +218,20 @@ fun SearchNPlanScreen(
                                     )
                                 },
                                 onAddToPlan = { viewModel.addDestination(result) },
+                                onOpenDetail = onOpenDetail?.let { callback ->
+                                    {
+                                        val type = when (result) {
+                                            is SearchResult.PersonalPoi -> "poi"
+                                            is SearchResult.ImportedPoi -> "poi"
+                                            is SearchResult.OsmPoi -> "osm_poi"
+                                            is SearchResult.GooglePlace -> "google_place"
+                                        }
+                                        callback(type, result.poi.id)
+                                    }
+                                },
                             )
                             HorizontalDivider()
                         }
-                    } else {
-                        // A different row is active – show plain non-draggable input box
-                        item(key = "dest_${dest.id}") {
-                            DestinationInputRow(
-                                value = dest.name,
-                                isActive = false,
-                                hasExistingDest = true,
-                                onTap = { viewModel.activateRow(index) },
-                                onRemove = { viewModel.removeDestination(dest.id) },
-                            )
-                        }
-                    }
-                }
-
-                // ── Ghost row (next empty slot) ──────────────────────────────
-                val isGhostActive = activeRowIndex == destinations.size
-                item(key = "ghost") {
-                    DestinationInputRow(
-                        value = if (isGhostActive) query else "",
-                        isActive = isGhostActive,
-                        hasExistingDest = false,
-                        placeholder = if (destinations.isEmpty()) "Add a destination…" else "Add another destination…",
-                        focusRequester = if (isGhostActive) focusRequester else null,
-                        onValueChange = viewModel::onQueryChange,
-                        onTap = if (!isGhostActive) ({ viewModel.activateRow(destinations.size) }) else null,
-                    )
-                }
-                if (isGhostActive) {
-                    items(results, key = { "result_${it.poi.id}" }) { result ->
-                        SearchResultRow(
-                            result = result,
-                            onNavigate = {
-                                NavigationIntentHelper.launchSingleNavigation(
-                                    context, result.poi.lat, result.poi.lng,
-                                )
-                            },
-                            onAddToPlan = { viewModel.addDestination(result) },
-                        )
-                        HorizontalDivider()
                     }
                 }
             }
@@ -281,22 +321,22 @@ fun SearchNPlanScreen(
 private fun DestinationInputRow(
     value: String,
     isActive: Boolean,
-    hasExistingDest: Boolean,
     placeholder: String = "Search for a destination…",
     onValueChange: (String) -> Unit = {},
     onTap: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
-    onDeactivate: (() -> Unit)? = null,
     showDragHandle: Boolean = false,
     dragHandleModifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    dimmed: Boolean = false,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         if (showDragHandle) {
             Icon(
                 imageVector = Icons.Default.DragHandle,
@@ -306,15 +346,9 @@ private fun DestinationInputRow(
             Spacer(Modifier.width(4.dp))
         }
 
-        val trailingIcon: (@Composable () -> Unit)? = when {
-            isActive && value.isNotEmpty() -> {
-                { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Default.Close, "Clear") } }
-            }
-            isActive && value.isEmpty() && hasExistingDest -> {
-                { IconButton(onClick = { onDeactivate?.invoke() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Cancel") } }
-            }
-            else -> null
-        }
+        val trailingIcon: (@Composable () -> Unit)? = if (isActive && value.isNotEmpty()) {
+            { IconButton(onClick = { onValueChange("") }) { Icon(Icons.Default.Close, "Clear") } }
+        } else null
 
         Box(modifier = Modifier.weight(1f)) {
             OutlinedTextField(
@@ -355,5 +389,23 @@ private fun DestinationInputRow(
             }
         }
     }
+
+    // White scrim overlay when dimmed — brightens/washes out the row; also consumes all touches
+    if (dimmed) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.55f))
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                },
+        )
+    }
+}  // end outer Box
 }
 

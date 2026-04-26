@@ -13,6 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.mappingsolution.data.model.PlanDestination
 import com.mappingsolution.service.RecordingService
 import com.mappingsolution.ui.library.GroupFormScreen
 import com.mappingsolution.ui.library.GroupFormViewModel
@@ -24,7 +25,9 @@ import com.mappingsolution.ui.permission.StoragePermissionScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
 import com.mappingsolution.ui.poi.media.MediaPreviewScreen
 import com.mappingsolution.ui.recording.RouteFinalizeScreen
+import com.mappingsolution.ui.searchnplan.NavigationIntentHelper
 import com.mappingsolution.ui.searchnplan.SearchNPlanScreen
+import com.mappingsolution.ui.searchnplan.SearchNPlanViewModel
 
 private const val ROUTE_MAIN = "main"
 private const val ROUTE_STORAGE_PERMISSION = "storage_permission"
@@ -33,7 +36,7 @@ private const val ROUTE_GROUP_FORM = "group_form"
 private const val ROUTE_GROUP_FORM_EDIT = "group_form/{groupId}"
 private const val ROUTE_ICON_PICKER = "icon_picker"
 private const val ROUTE_POI_FORM_NEW = "poi_form_new?lat={lat}&lng={lng}"
-private const val ROUTE_ITEM_DETAIL = "item_detail/{type}/{id}"
+private const val ROUTE_ITEM_DETAIL = "item_detail/{type}/{id}?fromSearch={fromSearch}"
 private const val ROUTE_POI_MEDIA_PREVIEW = "poi_media_preview/{poiId}?startIndex={startIndex}"
 private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
 private const val ROUTE_ROUTE_FINALIZE = "route_finalize/{routeId}"
@@ -46,6 +49,8 @@ private const val KEY_POI_ID = "poiId"
 private const val KEY_ROUTE_ID = "routeId"
 private const val KEY_DETAIL_TYPE = "type"
 private const val KEY_DETAIL_ID = "id"
+private const val KEY_FROM_SEARCH = "fromSearch"
+private const val KEY_ADDED_DESTINATION = "added_destination"
 private const val KEY_START_INDEX = "startIndex"
 private const val KEY_LAT = "lat"
 private const val KEY_LNG = "lng"
@@ -109,8 +114,11 @@ fun AppNavGraph() {
             arguments = listOf(
                 navArgument(KEY_DETAIL_TYPE) { type = NavType.StringType },
                 navArgument(KEY_DETAIL_ID) { type = NavType.StringType },
+                navArgument(KEY_FROM_SEARCH) { type = NavType.BoolType; defaultValue = false },
             ),
-        ) {
+        ) { backStackEntry ->
+            val fromSearch = backStackEntry.arguments?.getBoolean(KEY_FROM_SEARCH) ?: false
+            val context = LocalContext.current
             ItemDetailScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToEditPoi = { poiId -> navController.navigate("poi_form_edit/$poiId") },
@@ -119,6 +127,14 @@ fun AppNavGraph() {
                     navController.currentBackStackEntry?.savedStateHandle?.set("media_paths", paths)
                     navController.navigate("poi_media_preview/$poiId?startIndex=$index")
                 },
+                fromSearch = fromSearch,
+                onNavigate = if (fromSearch) { lat, lng ->
+                    NavigationIntentHelper.launchSingleNavigation(context, lat, lng)
+                } else null,
+                onAddToPlan = if (fromSearch) { dest ->
+                    navController.previousBackStackEntry?.savedStateHandle?.set(KEY_ADDED_DESTINATION, dest)
+                    navController.popBackStack()
+                } else null,
             )
         }
 
@@ -250,8 +266,22 @@ fun AppNavGraph() {
             arguments = listOf(
                 navArgument(KEY_PLAN_ID) { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
-        ) {
-            SearchNPlanScreen(onNavigateBack = { navController.popBackStack() })
+        ) { backStackEntry ->
+            val vm: SearchNPlanViewModel = hiltViewModel(backStackEntry)
+            val addedDestination = backStackEntry.savedStateHandle
+                .getStateFlow<PlanDestination?>(KEY_ADDED_DESTINATION, null)
+                .collectAsState()
+            LaunchedEffect(addedDestination.value) {
+                val dest = addedDestination.value ?: return@LaunchedEffect
+                vm.addDestinationFromDetail(dest)
+                backStackEntry.savedStateHandle.remove<PlanDestination>(KEY_ADDED_DESTINATION)
+            }
+            SearchNPlanScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onOpenDetail = { type, id ->
+                    navController.navigate("item_detail/$type/$id?fromSearch=true")
+                },
+            )
         }
     }
 }

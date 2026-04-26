@@ -16,6 +16,8 @@ import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
+import com.mappingsolution.data.map.MapLayersState
+import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
@@ -63,9 +65,18 @@ class LibraryViewModel @Inject constructor(
     private val googlePlacesRepository: GooglePlacesRepository,
     private val osmPoiRepository: OsmPoiRepository,
     private val bulkPoiRepository: BulkPoiRepository,
+    private val mapLayersState: MapLayersState,
 ) : ViewModel() {
 
     private val workManager = WorkManager.getInstance(context)
+
+    // ── Map layer state ───────────────────────────────────────────────────
+
+    val mapStyle: StateFlow<MapStyle> = mapLayersState.mapStyle
+    val hillshadeVisible: StateFlow<Boolean> = mapLayersState.hillshadeVisible
+
+    fun setMapStyle(style: MapStyle) = mapLayersState.setMapStyle(style)
+    fun toggleHillshade() = mapLayersState.setHillshadeVisible(!mapLayersState.hillshadeVisible.value)
 
     // ── Raw data ──────────────────────────────────────────────────────────
 

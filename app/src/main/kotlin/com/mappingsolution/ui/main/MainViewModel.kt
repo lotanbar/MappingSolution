@@ -7,6 +7,7 @@ import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.map.MapHolder
+import com.mappingsolution.data.map.MapLayersState
 import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
@@ -17,7 +18,6 @@ import com.mappingsolution.data.places.GooglePlacesRepository
 import com.mappingsolution.data.places.NEARBY_POI_MIN_ZOOM
 import com.mappingsolution.data.places.OSM_FETCH_DEBOUNCE_MS
 import com.mappingsolution.data.places.OsmPoiRepository
-import com.mappingsolution.data.prefs.MapStylePreference
 import com.mappingsolution.data.prefs.ViewportPreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,7 +44,7 @@ class MainViewModel @Inject constructor(
     val googlePlacesRepository: GooglePlacesRepository,
     val osmPoiRepository: OsmPoiRepository,
     val bulkPoiRepository: BulkPoiRepository,
-    private val mapStylePreference: MapStylePreference,
+    private val mapLayersState: MapLayersState,
 ) : ViewModel() {
 
     val groups: StateFlow<List<Group>> = groupRepository.observeAll()
@@ -86,12 +86,12 @@ class MainViewModel @Inject constructor(
     val bulkPois: StateFlow<List<Poi>> = bulkPoiRepository.poisInViewport
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val mapStyle: MutableStateFlow<MapStyle> = MutableStateFlow(mapStylePreference.load())
+    val mapStyle: MutableStateFlow<MapStyle> = mapLayersState.mapStyle
+    val hillshadeVisible: MutableStateFlow<Boolean> = mapLayersState.hillshadeVisible
 
     fun toggleMapStyle() {
-        val next = if (mapStyle.value == MapStyle.SATELLITE) MapStyle.TOPO_DARK else MapStyle.SATELLITE
-        mapStyle.value = next
-        mapStylePreference.save(next)
+        val next = if (mapLayersState.mapStyle.value == MapStyle.SATELLITE) MapStyle.TOPO_DARK else MapStyle.SATELLITE
+        mapLayersState.setMapStyle(next)
     }
 
     private var googleRefreshJob: Job? = null

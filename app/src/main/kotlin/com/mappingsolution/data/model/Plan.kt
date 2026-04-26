@@ -11,7 +11,7 @@ data class PlanDestination(
     val name: String,
     val lat: Double,
     val lng: Double,
-)
+) : java.io.Serializable
 
 data class Plan(
     val id: String = UUID.randomUUID().toString(),

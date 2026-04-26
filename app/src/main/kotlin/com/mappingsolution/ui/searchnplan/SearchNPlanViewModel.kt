@@ -9,6 +9,8 @@ import com.mappingsolution.data.model.DestinationSource
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.PlanDestination
 import com.mappingsolution.data.model.SearchResult
+import com.mappingsolution.data.places.GooglePlacesRepository
+import com.mappingsolution.data.places.OsmPoiRepository
 import com.mappingsolution.data.search.SearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -30,6 +32,8 @@ class SearchNPlanViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val planRepository: PlanFileRepository,
     private val mapHolder: MapHolder,
+    private val osmPoiRepository: OsmPoiRepository,
+    private val googlePlacesRepository: GooglePlacesRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -84,7 +88,7 @@ class SearchNPlanViewModel @Inject constructor(
                 val lng = camera?.lng ?: 0.0
                 isLoading.value = true
                 try {
-                    _results.value = searchRepository.search(
+                    val results = searchRepository.search(
                         query = query,
                         userLat = lat,
                         userLng = lng,
@@ -93,6 +97,14 @@ class SearchNPlanViewModel @Inject constructor(
                         viewNorth = lat + 0.5,
                         viewEast = lng + 0.5,
                         skipRemote = camera == null,
+                    )
+                    _results.value = results
+                    // Register remote results so ItemDetailViewModel can look them up by ID
+                    osmPoiRepository.registerSearchPois(
+                        results.filterIsInstance<SearchResult.OsmPoi>().map { it.poi }
+                    )
+                    googlePlacesRepository.registerSearchPois(
+                        results.filterIsInstance<SearchResult.GooglePlace>().map { it.poi }
                     )
                 } finally {
                     isLoading.value = false
@@ -105,9 +117,9 @@ class SearchNPlanViewModel @Inject constructor(
         searchQuery.value = query
     }
 
-    fun activateRow(index: Int) {
+    fun activateRow(index: Int, prefill: String = "") {
         _activeRowIndex.value = index
-        searchQuery.value = ""
+        searchQuery.value = prefill
         _results.value = emptyList()
         isLoading.value = false
     }
@@ -146,6 +158,19 @@ class SearchNPlanViewModel @Inject constructor(
 
     fun removeDestination(id: String) {
         _destinations.update { list -> list.filter { it.id != id } }
+    }
+
+    /** Adds a destination returned from the ItemDetailScreen when fromSearch=true. */
+    fun addDestinationFromDetail(dest: PlanDestination) {
+        val activeIdx = _activeRowIndex.value
+        _destinations.update { list ->
+            if (activeIdx == null || activeIdx >= list.size) {
+                list + dest
+            } else {
+                list.toMutableList().apply { set(activeIdx, dest) }
+            }
+        }
+        deactivateRow()
     }
 
     fun moveDestination(from: Int, to: Int) {

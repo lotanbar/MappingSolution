@@ -128,6 +128,8 @@ fun LibraryScreen(
     val osmPoiCount by viewModel.osmPoiCount.collectAsState()
     val googlePlacesGroup by viewModel.googlePlacesGroup.collectAsState()
     val osmPoiGroup by viewModel.osmPoiGroup.collectAsState()
+    val mapStyle by viewModel.mapStyle.collectAsState()
+    val hillshadeVisible by viewModel.hillshadeVisible.collectAsState()
 
     var planToDelete by remember { mutableStateOf<Plan?>(null) }
 
