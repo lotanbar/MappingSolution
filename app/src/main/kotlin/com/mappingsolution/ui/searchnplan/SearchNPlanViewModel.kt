@@ -3,15 +3,18 @@ package com.mappingsolution.ui.searchnplan
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mappingsolution.data.map.MapHolder
+import com.mappingsolution.data.model.DestinationSource
+import com.mappingsolution.data.model.PlanDestination
 import com.mappingsolution.data.model.SearchResult
 import com.mappingsolution.data.search.SearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 @HiltViewModel
@@ -26,6 +29,9 @@ class SearchNPlanViewModel @Inject constructor(
     val results: StateFlow<List<SearchResult>> = _results.asStateFlow()
 
     val isLoading = MutableStateFlow(false)
+
+    private val _destinations = MutableStateFlow<List<PlanDestination>>(emptyList())
+    val destinations: StateFlow<List<PlanDestination>> = _destinations.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -60,5 +66,34 @@ class SearchNPlanViewModel @Inject constructor(
 
     fun onQueryChange(query: String) {
         searchQuery.value = query
+    }
+
+    fun addDestination(result: SearchResult) {
+        val source = when (result) {
+            is SearchResult.PersonalPoi -> DestinationSource.PERSONAL
+            is SearchResult.ImportedPoi -> DestinationSource.IMPORTED
+            is SearchResult.OsmPoi -> DestinationSource.OSM
+            is SearchResult.GooglePlace -> DestinationSource.GOOGLE
+        }
+        _destinations.update { list ->
+            list + PlanDestination(
+                sourceType = source,
+                sourceId = result.poi.id,
+                name = result.poi.name,
+                lat = result.poi.lat,
+                lng = result.poi.lng,
+            )
+        }
+    }
+
+    fun removeDestination(id: String) {
+        _destinations.update { list -> list.filter { it.id != id } }
+    }
+
+    fun moveDestination(from: Int, to: Int) {
+        _destinations.update { list ->
+            if (from !in list.indices || to !in list.indices) return@update list
+            list.toMutableList().apply { add(to, removeAt(from)) }
+        }
     }
 }
