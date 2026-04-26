@@ -85,6 +85,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.fs.ImportResult
@@ -103,6 +104,7 @@ fun LibraryScreen(
     onEditGroup: (String) -> Unit,
     onEditPoi: (String) -> Unit,
     onEditRoute: (String) -> Unit,
+    onOpenPlan: (String) -> Unit,
     onContinueRecording: (String) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -111,6 +113,7 @@ fun LibraryScreen(
     val poisByGroup by viewModel.poisByGroup.collectAsState()
     val filteredOrphanedPois by viewModel.filteredOrphanedPois.collectAsState()
     val filteredRoutes by viewModel.filteredRoutes.collectAsState()
+    val plans by viewModel.plans.collectAsState()
     val expandedGroups by viewModel.expandedGroups.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val canOrphan by viewModel.canOrphanSelection.collectAsState()
@@ -125,6 +128,8 @@ fun LibraryScreen(
     val osmPoiCount by viewModel.osmPoiCount.collectAsState()
     val googlePlacesGroup by viewModel.googlePlacesGroup.collectAsState()
     val osmPoiGroup by viewModel.osmPoiGroup.collectAsState()
+
+    var planToDelete by remember { mutableStateOf<Plan?>(null) }
 
     val context = LocalContext.current
 
@@ -215,6 +220,15 @@ fun LibraryScreen(
     }
 
     // ── Dialogs ───────────────────────────────────────────────────────────
+
+    planToDelete?.let { plan ->
+        DestructiveCooldownDialog(
+            title = "Delete \"${plan.name}\"?",
+            text = "This will permanently delete this plan. This cannot be undone.",
+            onConfirm = { planToDelete = null; viewModel.deletePlan(plan.id) },
+            onDismiss = { planToDelete = null },
+        )
+    }
 
     importResult?.let { result ->
         ImportResultDialog(result = result, onDismiss = { viewModel.dismissImportResult() })
@@ -638,8 +652,21 @@ fun LibraryScreen(
                 }
             }
 
+            // ── Plans ─────────────────────────────────────────────────────
+            if (plans.isNotEmpty()) {
+                item { SectionHeader("Plans") }
+                items(plans, key = { "plan-${it.id}" }) { plan ->
+                    PlanRow(
+                        plan = plan,
+                        onTap = { onOpenPlan(plan.id) },
+                        onLongPress = { planToDelete = plan },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+
             // ── Empty state ───────────────────────────────────────────────
-            if (filteredGroups.isEmpty() && filteredOrphanedPois.isEmpty() && filteredRoutes.isEmpty()) {
+            if (filteredGroups.isEmpty() && filteredOrphanedPois.isEmpty() && filteredRoutes.isEmpty() && plans.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -920,6 +947,36 @@ private fun RouteRow(
                 }
             }
         } else null,
+    )
+}
+
+// ── Plan row ──────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PlanRow(
+    plan: Plan,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val stopCount = plan.destinations.size
+    val dateStr = SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date(plan.createdAt))
+    ListItem(
+        modifier = Modifier.combinedClickable(onClick = onTap, onLongClick = onLongPress),
+        headlineContent = { Text(plan.name) },
+        supportingContent = {
+            Text(
+                "$stopCount stop${if (stopCount != 1) "s" else ""} · $dateStr",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        leadingContent = {
+            Icon(
+                Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
     )
 }
 

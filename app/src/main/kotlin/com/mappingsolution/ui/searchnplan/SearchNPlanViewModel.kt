@@ -1,14 +1,19 @@
 package com.mappingsolution.ui.searchnplan
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.map.MapHolder
 import com.mappingsolution.data.model.DestinationSource
+import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.PlanDestination
 import com.mappingsolution.data.model.SearchResult
 import com.mappingsolution.data.search.SearchRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,8 +25,13 @@ import javax.inject.Inject
 @HiltViewModel
 class SearchNPlanViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
+    private val planRepository: PlanFileRepository,
     private val mapHolder: MapHolder,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** Non-null when this screen was opened from an existing Library plan. */
+    private val loadedPlanId: String? = savedStateHandle.get<String>("planId")
 
     val searchQuery = MutableStateFlow("")
 
@@ -36,7 +46,19 @@ class SearchNPlanViewModel @Inject constructor(
     private val _activeRowIndex = MutableStateFlow<Int?>(null)
     val activeRowIndex: StateFlow<Int?> = _activeRowIndex.asStateFlow()
 
+    /** Emits once when a plan is successfully saved — composable should navigate back. */
+    private val _savedEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val savedEvent: Flow<Unit> = _savedEvent
+
     init {
+        // Pre-fill destinations when opened from the Library
+        loadedPlanId?.let { planId ->
+            viewModelScope.launch {
+                val plan = planRepository.getById(planId)
+                plan?.let { _destinations.value = it.destinations }
+            }
+        }
+
         viewModelScope.launch {
             searchQuery.collectLatest { query ->
                 if (query.length < 3) {
@@ -120,4 +142,28 @@ class SearchNPlanViewModel @Inject constructor(
             list.toMutableList().apply { add(to, removeAt(from)) }
         }
     }
+
+    /** Saves the destination list as a named plan. Emits [savedEvent] when done. */
+    fun savePlan(name: String) {
+        viewModelScope.launch {
+            val dests = _destinations.value
+            if (loadedPlanId != null) {
+                val existing = planRepository.getById(loadedPlanId)
+                if (existing != null) {
+                    planRepository.update(
+                        existing.copy(
+                            name = name,
+                            destinations = dests,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    )
+                    _savedEvent.emit(Unit)
+                    return@launch
+                }
+            }
+            planRepository.insert(Plan(name = name, destinations = dests))
+            _savedEvent.emit(Unit)
+        }
+    }
 }
+

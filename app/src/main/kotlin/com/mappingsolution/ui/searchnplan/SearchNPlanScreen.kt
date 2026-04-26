@@ -16,23 +16,28 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -44,6 +49,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.ui.searchnplan.components.SearchResultRow
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +65,14 @@ fun SearchNPlanScreen(
     val destinations by viewModel.destinations.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val activeRowIndex by viewModel.activeRowIndex.collectAsState()
+
+    var showSavePlanDialog by remember { mutableStateOf(false) }
+    var planNameInput by remember { mutableStateOf("") }
+
+    // Navigate back after successful save
+    LaunchedEffect(Unit) {
+        viewModel.savedEvent.collect { onNavigateBack() }
+    }
 
     val focusRequester = remember { FocusRequester() }
     val lazyListState = rememberLazyListState()
@@ -188,18 +204,59 @@ fun SearchNPlanScreen(
                 }
             }
 
-            // ── Navigate button ──────────────────────────────────────────────
+            // ── Action buttons ───────────────────────────────────────────
             if (destinations.isNotEmpty() && activeRowIndex == null) {
-                Button(
-                    onClick = { NavigationIntentHelper.launchNavigation(context, destinations) },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Navigate")
+                    Button(
+                        onClick = { NavigationIntentHelper.launchNavigation(context, destinations) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Navigate")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            planNameInput = "Plan — ${SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date())}"
+                            showSavePlanDialog = true
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Create Plan")
+                    }
                 }
             }
         }
+    }
+
+    if (showSavePlanDialog) {
+        AlertDialog(
+            onDismissRequest = { showSavePlanDialog = false },
+            title = { Text("Save plan") },
+            text = {
+                OutlinedTextField(
+                    value = planNameInput,
+                    onValueChange = { planNameInput = it },
+                    label = { Text("Plan name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSavePlanDialog = false
+                        viewModel.savePlan(planNameInput.trim().ifEmpty { "Plan" })
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSavePlanDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 
     LaunchedEffect(activeRowIndex) {

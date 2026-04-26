@@ -98,6 +98,10 @@ class StorageManager @Inject constructor(
     /** Temporary staging directory for media files being attached to a POI. */
     fun getTempDir(): File = File(mediaRootDir, "temp").also { it.mkdirs() }
 
+    // ── Plans — filename is "{sanitized-name}_{first8ofId}.json" ─────────────
+    fun getPlansDir(): File = File(rootDir, "plans").also { it.mkdirs() }
+    fun getPlanFile(name: String, id: String): File = File(getPlansDir(), "${sanitizeName(name)}_${id.take(8)}.json")
+
     fun getExportsDir(): File = File(rootDir, "exports").also { it.mkdirs() }
 
     fun resolvePath(relativePath: String): File = File(rootDir, relativePath)

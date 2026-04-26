@@ -13,9 +13,11 @@ import com.mappingsolution.data.fs.BulkPoiRepository
 import com.mappingsolution.data.fs.ExportRepository
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.ImportResult
+import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
@@ -56,6 +58,7 @@ class LibraryViewModel @Inject constructor(
     private val groupRepository: GroupFileRepository,
     private val poiRepository: PoiFileRepository,
     private val routeRepository: RouteFileRepository,
+    private val planRepository: PlanFileRepository,
     private val exportRepository: ExportRepository,
     private val googlePlacesRepository: GooglePlacesRepository,
     private val osmPoiRepository: OsmPoiRepository,
@@ -71,6 +74,10 @@ class LibraryViewModel @Inject constructor(
     private val _allPois = poiRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _allRoutes = routeRepository.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Saved plans, newest first. */
+    val plans: StateFlow<List<Plan>> = planRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** All groups unfiltered — used for the group-picker dialog in un-orphan. */
@@ -298,6 +305,12 @@ class LibraryViewModel @Inject constructor(
             if (orphans.isNotEmpty()) poiRepository.moveToGroup(orphans, groupId)
             clearSelection()
         }
+    }
+
+    // ── Plans ──────────────────────────────────────────────────────────────
+
+    fun deletePlan(id: String) {
+        viewModelScope.launch { planRepository.delete(id) }
     }
 
     // ── Import ────────────────────────────────────────────────────────────

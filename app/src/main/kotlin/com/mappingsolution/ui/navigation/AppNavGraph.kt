@@ -39,7 +39,7 @@ private const val ROUTE_POI_FORM_EDIT = "poi_form_edit/{poiId}"
 private const val ROUTE_ROUTE_FINALIZE = "route_finalize/{routeId}"
 /** Edit a saved route from the Library (no discard guard). */
 private const val ROUTE_ROUTE_EDIT = "route_edit/{routeId}"
-private const val ROUTE_SEARCH_N_PLAN = "search_n_plan"
+private const val ROUTE_SEARCH_N_PLAN = "search_n_plan?planId={planId}"
 
 private const val KEY_GROUP_ID = "groupId"
 private const val KEY_POI_ID = "poiId"
@@ -51,6 +51,7 @@ private const val KEY_LAT = "lat"
 private const val KEY_LNG = "lng"
 private const val KEY_SELECTED_ICON = "selected_icon"
 private const val KEY_CURRENT_ICON = "current_icon"
+private const val KEY_PLAN_ID = "planId"
 
 @Composable
 fun AppNavGraph() {
@@ -155,6 +156,7 @@ fun AppNavGraph() {
                 onEditGroup = { groupId -> navController.navigate("group_form/$groupId") },
                 onEditPoi = { poiId -> navController.navigate("poi_form_edit/$poiId") },
                 onEditRoute = { routeId -> navController.navigate("route_edit/$routeId") },
+                onOpenPlan = { planId -> navController.navigate("search_n_plan?planId=$planId") },
                 onContinueRecording = { routeId ->
                     context.startService(RecordingService.resumeIncompleteIntent(context, routeId))
                     navController.navigate(ROUTE_MAIN) {
@@ -243,7 +245,12 @@ fun AppNavGraph() {
             )
         }
 
-        composable(ROUTE_SEARCH_N_PLAN) {
+        composable(
+            route = ROUTE_SEARCH_N_PLAN,
+            arguments = listOf(
+                navArgument(KEY_PLAN_ID) { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) {
             SearchNPlanScreen(onNavigateBack = { navController.popBackStack() })
         }
     }

@@ -2,6 +2,7 @@ package com.mappingsolution.di
 
 import android.content.Context
 import com.mappingsolution.data.fs.GroupFileRepository
+import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
 import com.mappingsolution.data.util.StorageManager
@@ -34,4 +35,9 @@ object DatabaseModule {
     @Singleton
     fun provideRouteFileRepository(storageManager: StorageManager): RouteFileRepository =
         RouteFileRepository(storageManager)
+
+    @Provides
+    @Singleton
+    fun providePlanFileRepository(storageManager: StorageManager): PlanFileRepository =
+        PlanFileRepository(storageManager)
 }
