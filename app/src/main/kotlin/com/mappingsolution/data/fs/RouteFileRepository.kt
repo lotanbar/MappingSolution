@@ -94,6 +94,19 @@ class RouteFileRepository @Inject constructor(private val storageManager: Storag
         _routes.value = _routes.value.filter { it.id !in ids }
     }
 
+    /** Updates distance and duration on disk without renaming the recording folder. */
+    suspend fun checkpoint(routeId: String, distanceMeters: Double, durationSec: Long) = withContext(Dispatchers.IO) {
+        val route = _routes.value.find { it.id == routeId } ?: return@withContext
+        val updated = route.copy(
+            distanceMeters = distanceMeters,
+            durationSec = durationSec,
+            checkpointAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        writeRoute(updated)
+        _routes.value = _routes.value.map { if (it.id == routeId) updated else it }
+    }
+
     suspend fun appendPoints(routeId: String, points: List<RoutePoint>) = withContext(Dispatchers.IO) {
         if (points.isEmpty()) return@withContext
         val route = _routes.value.find { it.id == routeId } ?: return@withContext

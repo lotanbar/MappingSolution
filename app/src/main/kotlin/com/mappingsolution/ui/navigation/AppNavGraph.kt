@@ -1,5 +1,7 @@
 package com.mappingsolution.ui.navigation
 
+import android.os.Build
+import android.os.Environment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,11 +20,13 @@ import com.mappingsolution.ui.library.IconPickerScreen
 import com.mappingsolution.ui.library.LibraryScreen
 import com.mappingsolution.ui.main.MainScreen
 import com.mappingsolution.ui.detail.ItemDetailScreen
+import com.mappingsolution.ui.permission.StoragePermissionScreen
 import com.mappingsolution.ui.poi.PoiFormScreen
 import com.mappingsolution.ui.poi.media.MediaPreviewScreen
 import com.mappingsolution.ui.recording.RouteFinalizeScreen
 
 private const val ROUTE_MAIN = "main"
+private const val ROUTE_STORAGE_PERMISSION = "storage_permission"
 private const val ROUTE_LIBRARY = "library"
 private const val ROUTE_GROUP_FORM = "group_form"
 private const val ROUTE_GROUP_FORM_EDIT = "group_form/{groupId}"
@@ -50,7 +54,21 @@ private const val KEY_CURRENT_ICON = "current_icon"
 fun AppNavGraph() {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = ROUTE_MAIN) {
+    val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        !Environment.isExternalStorageManager()
+    val startDestination = if (needsPermission) ROUTE_STORAGE_PERMISSION else ROUTE_MAIN
+
+    NavHost(navController = navController, startDestination = startDestination) {
+
+        composable(ROUTE_STORAGE_PERMISSION) {
+            StoragePermissionScreen(
+                onPermissionGranted = {
+                    navController.navigate(ROUTE_MAIN) {
+                        popUpTo(ROUTE_STORAGE_PERMISSION) { inclusive = true }
+                    }
+                }
+            )
+        }
 
         composable(ROUTE_MAIN) {
             MainScreen(

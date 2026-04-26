@@ -63,6 +63,14 @@ class RecordingRepository @Inject constructor(
         )
     }
 
+    /** Persists current distance and duration to disk. Called periodically during recording
+     *  so the on-disk values are up-to-date if the app is force-killed. */
+    fun checkpointRoute(routeId: String, distanceMeters: Double, durationSec: Long) {
+        scope.launch {
+            routeFileRepository.checkpoint(routeId, distanceMeters, durationSec)
+        }
+    }
+
     fun persistPoints(routeId: String, points: List<RecordingPoint>) {
         if (points.isEmpty()) return
         scope.launch {

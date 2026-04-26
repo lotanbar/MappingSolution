@@ -31,9 +31,15 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
 
     init {
         CoroutineScope(Dispatchers.IO).launch {
-            loadAll()
-            if (_groups.value.isEmpty()) seedDefault()
-            seedPlacesGroups()
+            try {
+                loadAll()
+                if (_groups.value.isEmpty()) seedDefault()
+                seedPlacesGroups()
+            } catch (e: java.io.IOException) {
+                android.util.Log.e("GroupFileRepository", "Storage not accessible on init; permission may be missing", e)
+            } catch (e: SecurityException) {
+                android.util.Log.e("GroupFileRepository", "Storage permission denied on init", e)
+            }
         }
     }
 

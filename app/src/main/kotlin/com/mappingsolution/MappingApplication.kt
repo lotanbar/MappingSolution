@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.os.Environment
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.mappingsolution.data.migration.LegacyDbMigration
@@ -32,9 +33,16 @@ class MappingApplication : Application(), Configuration.Provider {
         val storageManager = StorageManager(this)
         val marker = File(storageManager.rootDir, ".migrated")
         if (!marker.exists()) {
-            runBlocking(Dispatchers.IO) {
-                LegacyDbMigration(this@MappingApplication, storageManager).run()
-                marker.createNewFile()
+            // Skip migration when storage access is unavailable (e.g. MANAGE_EXTERNAL_STORAGE
+            // was revoked by a force-stop). The marker won't be written, so migration will be
+            // retried on the next launch after the user re-grants the permission.
+            val canAccessStorage = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                Environment.isExternalStorageManager()
+            if (canAccessStorage) {
+                runBlocking(Dispatchers.IO) {
+                    LegacyDbMigration(this@MappingApplication, storageManager).run()
+                    marker.createNewFile()
+                }
             }
         }
 

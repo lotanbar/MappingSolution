@@ -380,6 +380,11 @@ class RecordingService : Service() {
         pendingPoints.clear()
         recordingRepository.persistPoints(routeId, toFlush)
         flushedPointCount += toFlush.size
+
+        // Checkpoint distance and duration to disk so they survive a force-kill.
+        val st = recordingRepository.state.value as? RecordingState.Active ?: return
+        val durationSec = st.elapsedMs(System.currentTimeMillis()) / 1000L
+        recordingRepository.checkpointRoute(routeId, st.distanceMeters, durationSec)
     }
 
     private fun resetMotionState() {
