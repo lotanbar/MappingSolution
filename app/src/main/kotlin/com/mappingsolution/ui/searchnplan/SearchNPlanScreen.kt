@@ -49,9 +49,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.ui.searchnplan.components.SearchResultRow
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,11 +65,6 @@ fun SearchNPlanScreen(
 
     var showSavePlanDialog by remember { mutableStateOf(false) }
     var planNameInput by remember { mutableStateOf("") }
-
-    // Navigate back after successful save
-    LaunchedEffect(Unit) {
-        viewModel.savedEvent.collect { onNavigateBack() }
-    }
 
     val focusRequester = remember { FocusRequester() }
     val lazyListState = rememberLazyListState()
@@ -220,12 +212,17 @@ fun SearchNPlanScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            planNameInput = "Plan — ${SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date())}"
-                            showSavePlanDialog = true
+                            if (viewModel.openedFromLibrary) {
+                                viewModel.savePlan()
+                                onNavigateBack()
+                            } else {
+                                planNameInput = ""
+                                showSavePlanDialog = true
+                            }
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Create Plan")
+                        Text(if (viewModel.openedFromLibrary) "Edit Plan" else "Create Plan")
                     }
                 }
             }
@@ -235,7 +232,7 @@ fun SearchNPlanScreen(
     if (showSavePlanDialog) {
         AlertDialog(
             onDismissRequest = { showSavePlanDialog = false },
-            title = { Text("Save plan") },
+            title = { Text("Create plan") },
             text = {
                 OutlinedTextField(
                     value = planNameInput,
@@ -249,7 +246,8 @@ fun SearchNPlanScreen(
                 TextButton(
                     onClick = {
                         showSavePlanDialog = false
-                        viewModel.savePlan(planNameInput.trim().ifEmpty { "Plan" })
+                        viewModel.savePlan(planNameInput.trim().ifEmpty { null })
+                        onNavigateBack()
                     },
                 ) { Text("Save") }
             },
@@ -267,7 +265,9 @@ fun SearchNPlanScreen(
     }
 
     LaunchedEffect(Unit) {
-        viewModel.activateRow(viewModel.destinations.value.size)
+        if (!viewModel.openedFromLibrary) {
+            viewModel.activateRow(viewModel.destinations.value.size)
+        }
     }
 }
 

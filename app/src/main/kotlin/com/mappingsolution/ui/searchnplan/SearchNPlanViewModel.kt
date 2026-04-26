@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -32,6 +35,9 @@ class SearchNPlanViewModel @Inject constructor(
 
     /** Non-null when this screen was opened from an existing Library plan. */
     private val loadedPlanId: String? = savedStateHandle.get<String>("planId")
+
+    /** True when the screen was opened from the Library with pre-filled destinations. */
+    val openedFromLibrary: Boolean = loadedPlanId != null
 
     val searchQuery = MutableStateFlow("")
 
@@ -50,12 +56,18 @@ class SearchNPlanViewModel @Inject constructor(
     private val _savedEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val savedEvent: Flow<Unit> = _savedEvent
 
+    private val _loadedPlanName = MutableStateFlow<String?>(null)
+    val loadedPlanName: StateFlow<String?> = _loadedPlanName.asStateFlow()
+
     init {
         // Pre-fill destinations when opened from the Library
         loadedPlanId?.let { planId ->
             viewModelScope.launch {
                 val plan = planRepository.getById(planId)
-                plan?.let { _destinations.value = it.destinations }
+                plan?.let {
+                    _destinations.value = it.destinations
+                    _loadedPlanName.value = it.name
+                }
             }
         }
 
@@ -144,7 +156,10 @@ class SearchNPlanViewModel @Inject constructor(
     }
 
     /** Saves the destination list as a named plan. Emits [savedEvent] when done. */
-    fun savePlan(name: String) {
+    fun savePlan(nameOverride: String? = null) {
+        val name = nameOverride
+            ?: _loadedPlanName.value
+            ?: "Plan — ${SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date())}"
         viewModelScope.launch {
             val dests = _destinations.value
             if (loadedPlanId != null) {

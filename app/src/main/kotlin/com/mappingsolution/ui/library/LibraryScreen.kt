@@ -623,6 +623,19 @@ fun LibraryScreen(
                 }
             }
 
+            // ── Plans ─────────────────────────────────────────────────────
+            if (plans.isNotEmpty()) {
+                item { SectionHeader("Plans") }
+                items(plans, key = { "plan-${it.id}" }) { plan ->
+                    PlanRow(
+                        plan = plan,
+                        onTap = { onOpenPlan(plan.id) },
+                        onLongPress = { planToDelete = plan },
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                }
+            }
+
             // ── Routes ────────────────────────────────────────────────────
             if (filteredRoutes.isNotEmpty()) {
                 item { SectionHeader("Routes") }
@@ -647,19 +660,6 @@ fun LibraryScreen(
                         },
                         onToggleVisibility = { viewModel.toggleRouteVisibility(route) },
                         onIncompleteIconTap = { incompleteRoute = route },
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                }
-            }
-
-            // ── Plans ─────────────────────────────────────────────────────
-            if (plans.isNotEmpty()) {
-                item { SectionHeader("Plans") }
-                items(plans, key = { "plan-${it.id}" }) { plan ->
-                    PlanRow(
-                        plan = plan,
-                        onTap = { onOpenPlan(plan.id) },
-                        onLongPress = { planToDelete = plan },
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }

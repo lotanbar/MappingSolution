@@ -74,13 +74,6 @@ fun SearchResultRow(
             overflow = TextOverflow.Ellipsis,
         )
 
-        IconButton(onClick = onNavigate) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Navigate",
-            )
-        }
-
         IconButton(
             onClick = { onAddToPlan?.invoke() },
             enabled = onAddToPlan != null,
@@ -93,6 +86,13 @@ fun SearchResultRow(
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                 },
+            )
+        }
+
+        IconButton(onClick = onNavigate) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Navigate",
             )
         }
     }
