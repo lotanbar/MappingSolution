@@ -33,6 +33,9 @@ class SearchNPlanViewModel @Inject constructor(
     private val _destinations = MutableStateFlow<List<PlanDestination>>(emptyList())
     val destinations: StateFlow<List<PlanDestination>> = _destinations.asStateFlow()
 
+    private val _activeRowIndex = MutableStateFlow<Int?>(null)
+    val activeRowIndex: StateFlow<Int?> = _activeRowIndex.asStateFlow()
+
     init {
         viewModelScope.launch {
             searchQuery.collectLatest { query ->
@@ -68,22 +71,43 @@ class SearchNPlanViewModel @Inject constructor(
         searchQuery.value = query
     }
 
+    fun activateRow(index: Int) {
+        _activeRowIndex.value = index
+        searchQuery.value = ""
+        _results.value = emptyList()
+        isLoading.value = false
+    }
+
+    fun deactivateRow() {
+        _activeRowIndex.value = null
+        searchQuery.value = ""
+        _results.value = emptyList()
+        isLoading.value = false
+    }
+
     fun addDestination(result: SearchResult) {
+        val activeIdx = _activeRowIndex.value ?: return
         val source = when (result) {
             is SearchResult.PersonalPoi -> DestinationSource.PERSONAL
             is SearchResult.ImportedPoi -> DestinationSource.IMPORTED
             is SearchResult.OsmPoi -> DestinationSource.OSM
             is SearchResult.GooglePlace -> DestinationSource.GOOGLE
         }
+        val dest = PlanDestination(
+            sourceType = source,
+            sourceId = result.poi.id,
+            name = result.poi.name,
+            lat = result.poi.lat,
+            lng = result.poi.lng,
+        )
         _destinations.update { list ->
-            list + PlanDestination(
-                sourceType = source,
-                sourceId = result.poi.id,
-                name = result.poi.name,
-                lat = result.poi.lat,
-                lng = result.poi.lng,
-            )
+            if (activeIdx >= list.size) {
+                list + dest
+            } else {
+                list.toMutableList().apply { set(activeIdx, dest) }
+            }
         }
+        deactivateRow()
     }
 
     fun removeDestination(id: String) {

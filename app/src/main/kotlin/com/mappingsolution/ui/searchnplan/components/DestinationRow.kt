@@ -1,5 +1,6 @@
 package com.mappingsolution.ui.searchnplan.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,22 +24,26 @@ import com.mappingsolution.data.model.PlanDestination
 fun DestinationRow(
     destination: PlanDestination,
     onRemove: () -> Unit,
+    onClick: () -> Unit = {},
+    showDragHandle: Boolean = true,
     dragHandleModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Default.DragHandle,
-            contentDescription = "Drag to reorder",
-            modifier = dragHandleModifier,
-        )
-
-        Spacer(Modifier.width(12.dp))
+        if (showDragHandle) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                modifier = dragHandleModifier,
+            )
+            Spacer(Modifier.width(12.dp))
+        }
 
         Text(
             text = destination.name,
