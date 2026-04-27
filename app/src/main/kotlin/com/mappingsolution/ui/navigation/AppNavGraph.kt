@@ -2,10 +2,34 @@ package com.mappingsolution.ui.navigation
 
 import android.os.Build
 import android.os.Environment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
@@ -58,6 +82,7 @@ private const val KEY_SELECTED_ICON = "selected_icon"
 private const val KEY_CURRENT_ICON = "current_icon"
 private const val KEY_PLAN_ID = "planId"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
@@ -78,7 +103,21 @@ fun AppNavGraph() {
             )
         }
 
-        composable(ROUTE_MAIN) {
+        composable(ROUTE_MAIN) { backStackEntry ->
+            val searchVm: SearchNPlanViewModel = hiltViewModel(backStackEntry)
+            var searchSheetOpen by rememberSaveable { mutableStateOf(false) }
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            
+            val addedDestination = backStackEntry.savedStateHandle
+                .getStateFlow<PlanDestination?>(KEY_ADDED_DESTINATION, null)
+                .collectAsState()
+            LaunchedEffect(addedDestination.value) {
+                val dest = addedDestination.value ?: return@LaunchedEffect
+                searchVm.addDestinationFromDetail(dest)
+                backStackEntry.savedStateHandle.remove<PlanDestination>(KEY_ADDED_DESTINATION)
+                searchSheetOpen = true
+            }
+
             MainScreen(
                 onOpenLibrary = { navController.navigate(ROUTE_LIBRARY) },
                 onAddPoi = { lat, lng -> navController.navigate("poi_form_new?lat=$lat&lng=$lng") },
@@ -88,8 +127,66 @@ fun AppNavGraph() {
                 onOsmPoiTapped = { osmId -> navController.navigate("item_detail/osm_poi/$osmId") },
                 onBulkPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
                 onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
-                onOpenSearch = { navController.navigate(ROUTE_SEARCH_N_PLAN) },
+                onOpenSearch = { searchSheetOpen = true },
             )
+
+            if (searchSheetOpen) {
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        searchSheetOpen = false
+                        searchVm.clearPreview()
+                    },
+                    sheetState = sheetState,
+                    contentWindowInsets = { WindowInsets(0) },
+                    dragHandle = {
+                        // Must be obtained INSIDE the sheet's composition context so
+                        // clearFocus() reaches the text field that lives in this popup window.
+                        val sheetFocusManager = LocalFocusManager.current
+                        val sheetKeyboardController = LocalSoftwareKeyboardController.current
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .padding(vertical = 10.dp)
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            // Initial pass fires before the sheet's drag handler —
+                                            // keyboard is hidden on the very first touch frame.
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            if (event.changes.any { it.pressed && !it.previousPressed }) {
+                                                sheetFocusManager.clearFocus()
+                                                sheetKeyboardController?.hide()
+                                            }
+                                        }
+                                    }
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 32.dp, height = 4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    ),
+                            )
+                        }
+                    },
+                ) {
+                    SearchNPlanScreen(
+                        isEmbedded = true,
+                        viewModel = searchVm,
+                        onNavigateBack = {
+                            searchSheetOpen = false
+                            searchVm.clearPreview()
+                        },
+                        onOpenDetail = { type, id ->
+                            navController.navigate("item_detail/$type/$id?fromSearch=true")
+                        },
+                    )
+                }
+            }
         }
 
         composable(

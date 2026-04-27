@@ -2,10 +2,13 @@ package com.mappingsolution.ui.searchnplan
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -68,6 +71,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 fun SearchNPlanScreen(
     onNavigateBack: () -> Unit,
     onOpenDetail: ((type: String, id: String) -> Unit)? = null,
+    isEmbedded: Boolean = false,
     viewModel: SearchNPlanViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -101,17 +105,27 @@ fun SearchNPlanScreen(
         viewModel.deactivateRow()
     }
 
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .navigationBarsPadding(),
+    ) {
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = { Text("Search & Plan") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
+        topBar = if (!isEmbedded) {
+            {
+                TopAppBar(
+                    title = { Text("Search & Plan") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                )
+            }
+        } else {
+            {}
         },
     ) { paddingValues ->
         androidx.compose.foundation.layout.Column(
@@ -137,6 +151,27 @@ fun SearchNPlanScreen(
                     } else Modifier,
                 ),
         ) {
+            if (isEmbedded) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.MaterialTheme.let {
+                        Text(
+                            "Search & Plan",
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                }
+                HorizontalDivider()
+            }
+
             if (isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
             LazyColumn(
@@ -285,37 +320,38 @@ fun SearchNPlanScreen(
             }
 
             // ── Action buttons ───────────────────────────────────────────
-            if (destinations.isNotEmpty() && activeRowIndex == null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { NavigationIntentHelper.launchNavigation(context, destinations) },
+                    enabled = destinations.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Button(
-                        onClick = { NavigationIntentHelper.launchNavigation(context, destinations) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Navigate")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            if (viewModel.openedFromLibrary) {
-                                viewModel.savePlan()
-                                onNavigateBack()
-                            } else {
-                                planNameInput = ""
-                                showSavePlanDialog = true
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (viewModel.openedFromLibrary) "Edit Plan" else "Create Plan")
-                    }
+                    Text("Navigate")
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (viewModel.openedFromLibrary) {
+                            viewModel.savePlan()
+                            onNavigateBack()
+                        } else {
+                            planNameInput = ""
+                            showSavePlanDialog = true
+                        }
+                    },
+                    enabled = destinations.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (viewModel.openedFromLibrary) "Edit Plan" else "Create Plan")
                 }
             }
         }  // end Column
     }
+    }  // end Box
 
     if (showSavePlanDialog) {
         AlertDialog(
@@ -349,12 +385,8 @@ fun SearchNPlanScreen(
         if (activeRowIndex != null) {
             kotlinx.coroutines.delay(50)
             try { focusRequester.requestFocus() } catch (_: Exception) {}
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (!viewModel.openedFromLibrary) {
-            viewModel.activateRow(viewModel.destinations.value.size)
+        } else {
+            focusManager.clearFocus()
         }
     }
 }
