@@ -94,6 +94,28 @@ class RouteFileRepository @Inject constructor(private val storageManager: Storag
         _routes.value = _routes.value.filter { it.id !in ids }
     }
 
+    suspend fun orphan(ids: List<String>) = withContext(Dispatchers.IO) {
+        val updated = _routes.value.map { route ->
+            if (route.id in ids && route.groupId != null) {
+                val u = route.copy(groupId = null, updatedAt = System.currentTimeMillis())
+                writeRoute(u)
+                u
+            } else route
+        }
+        _routes.value = updated
+    }
+
+    suspend fun moveToGroup(ids: List<String>, groupId: String) = withContext(Dispatchers.IO) {
+        val updated = _routes.value.map { route ->
+            if (route.id in ids && route.groupId == null) {
+                val u = route.copy(groupId = groupId, updatedAt = System.currentTimeMillis())
+                writeRoute(u)
+                u
+            } else route
+        }
+        _routes.value = updated
+    }
+
     /** Updates distance and duration on disk without renaming the recording folder. */
     suspend fun checkpoint(routeId: String, distanceMeters: Double, durationSec: Long) = withContext(Dispatchers.IO) {
         val route = _routes.value.find { it.id == routeId } ?: return@withContext
@@ -140,6 +162,7 @@ class RouteFileRepository @Inject constructor(private val storageManager: Storag
             put("name", route.name)
             route.description?.let { put("description", it) }
             put("isVisible", route.isVisible)
+            route.groupId?.let { put("groupId", it) }
             put("didUserTapStop", route.didUserTapStop)
             put("startedAt", route.startedAt)
             route.stoppedAt?.let { put("stoppedAt", it) }
@@ -160,6 +183,7 @@ class RouteFileRepository @Inject constructor(private val storageManager: Storag
             name = json.getString("name"),
             description = json.optString("description").takeIf { it.isNotEmpty() },
             isVisible = json.optBoolean("isVisible", true),
+            groupId = json.optString("groupId").takeIf { it.isNotEmpty() },
             didUserTapStop = json.optBoolean("didUserTapStop", false),
             startedAt = json.getLong("startedAt"),
             stoppedAt = if (json.has("stoppedAt")) json.getLong("stoppedAt") else null,

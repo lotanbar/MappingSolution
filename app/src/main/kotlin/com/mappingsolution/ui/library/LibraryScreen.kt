@@ -110,16 +110,21 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val filteredGroups by viewModel.filteredGroups.collectAsState()
+    val filteredPoiGroups by viewModel.filteredPoiGroups.collectAsState()
+    val filteredRouteGroups by viewModel.filteredRouteGroups.collectAsState()
+    val filteredPlanGroups by viewModel.filteredPlanGroups.collectAsState()
+    val filteredAllGroups by viewModel.filteredAllGroups.collectAsState()
     val poisByGroup by viewModel.poisByGroup.collectAsState()
+    val routesByGroup by viewModel.routesByGroup.collectAsState()
+    val plansByGroup by viewModel.plansByGroup.collectAsState()
     val filteredOrphanedPois by viewModel.filteredOrphanedPois.collectAsState()
-    val filteredRoutes by viewModel.filteredRoutes.collectAsState()
-    val plans by viewModel.plans.collectAsState()
+    val filteredOrphanedRoutes by viewModel.filteredOrphanedRoutes.collectAsState()
+    val filteredOrphanedPlans by viewModel.filteredOrphanedPlans.collectAsState()
     val expandedGroups by viewModel.expandedGroups.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val canOrphan by viewModel.canOrphanSelection.collectAsState()
     val canUnorphan by viewModel.canUnorphanSelection.collectAsState()
-    val allGroups by viewModel.allGroupsUnfiltered.collectAsState()
+    val groupPickerGroups by viewModel.groupPickerGroups.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
     val importingFolderName by viewModel.importingFolderName.collectAsState()
     val importProgressText by viewModel.importProgressText.collectAsState()
@@ -136,8 +141,6 @@ fun LibraryScreen(
     val osmPoiGroup by viewModel.osmPoiGroup.collectAsState()
     val mapStyle by viewModel.mapStyle.collectAsState()
     val hillshadeVisible by viewModel.hillshadeVisible.collectAsState()
-
-    var planToDelete by remember { mutableStateOf<Plan?>(null) }
 
     val context = LocalContext.current
 
@@ -233,6 +236,7 @@ fun LibraryScreen(
     // ── Local dialog state ────────────────────────────────────────────────
     var showDeleteGroupsDialog by remember { mutableStateOf(false) }
     var showDeleteRowsDialog by remember { mutableStateOf(false) }
+    var showDeleteRasterLayersDialog by remember { mutableStateOf(false) }
     var showGroupPickerDialog by remember { mutableStateOf(false) }
     var incompleteRoute by remember { mutableStateOf<Route?>(null) }
 
@@ -243,12 +247,13 @@ fun LibraryScreen(
 
     // ── Dialogs ───────────────────────────────────────────────────────────
 
-    planToDelete?.let { plan ->
+    if (showDeleteRasterLayersDialog) {
+        val count = (selectionMode as? LibrarySelectionMode.RasterLayerSelection)?.selectedIds?.size ?: 0
         DestructiveCooldownDialog(
-            title = "Delete \"${plan.name}\"?",
-            text = "This will permanently delete this plan. This cannot be undone.",
-            onConfirm = { planToDelete = null; viewModel.deletePlan(plan.id) },
-            onDismiss = { planToDelete = null },
+            title = "Delete $count layer${if (count != 1) "s" else ""}",
+            text = "This will permanently remove the selected raster layer${if (count != 1) "s" else ""} and delete their tile files. This cannot be undone.",
+            onConfirm = { showDeleteRasterLayersDialog = false; viewModel.deleteSelectedRasterLayers() },
+            onDismiss = { showDeleteRasterLayersDialog = false },
         )
     }
 
@@ -301,7 +306,7 @@ fun LibraryScreen(
 
     if (showGroupPickerDialog) {
         GroupPickerDialog(
-            groups = allGroups,
+            groups = groupPickerGroups,
             onGroupPicked = { groupId ->
                 viewModel.moveSelectedRowsToGroup(groupId)
                 showGroupPickerDialog = false
@@ -471,17 +476,17 @@ fun LibraryScreen(
                             }
                         },
                         actions = {
-                            // Export selected rows (POIs and routes)
+                            // Export selected rows (POIs, routes, and plans)
                             IconButton(onClick = { viewModel.exportSelectedRows() }) {
                                 Icon(Icons.Default.Output, contentDescription = "Export selected")
                             }
-                            // Orphan: remove group from selected grouped POIs
+                            // Orphan: remove group from selected grouped items
                             if (canOrphan) {
                                 IconButton(onClick = { viewModel.orphanSelectedRows() }) {
-                                    Icon(Icons.Default.FolderOff, contentDescription = "Ungroup selected POIs")
+                                    Icon(Icons.Default.FolderOff, contentDescription = "Ungroup selected items")
                                 }
                             }
-                            // Un-orphan: move orphaned POIs to a group
+                            // Un-orphan: move ungrouped items to a group
                             if (canUnorphan) {
                                 IconButton(onClick = { showGroupPickerDialog = true }) {
                                     Icon(Icons.Default.DriveFileMove, contentDescription = "Move to group")
@@ -492,6 +497,25 @@ fun LibraryScreen(
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = "Delete selected",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        },
+                    )
+                }
+                is LibrarySelectionMode.RasterLayerSelection -> {
+                    TopAppBar(
+                        title = { Text("${mode.selectedIds.size} layer${if (mode.selectedIds.size != 1) "s" else ""} selected") },
+                        navigationIcon = {
+                            IconButton(onClick = { viewModel.clearSelection() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { showDeleteRasterLayersDialog = true }) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete selected layers",
                                     tint = MaterialTheme.colorScheme.error,
                                 )
                             }
@@ -544,21 +568,35 @@ fun LibraryScreen(
             }
 
             items(rasterLayers, key = { "raster-${it.id}" }) { layer ->
+                val isLayerSelected = (selectionMode as? LibrarySelectionMode.RasterLayerSelection)
+                    ?.selectedIds?.contains(layer.id) == true
                 RasterLayerRow(
                     layer = layer,
+                    isSelected = isLayerSelected,
+                    selectionMode = selectionMode,
+                    onTap = {
+                        when (selectionMode) {
+                            is LibrarySelectionMode.RasterLayerSelection -> viewModel.toggleRasterLayerSelection(layer.id)
+                            else -> Unit
+                        }
+                    },
+                    onLongPress = {
+                        if (selectionMode is LibrarySelectionMode.None) {
+                            viewModel.enterRasterLayerSelection(layer.id)
+                        }
+                    },
                     onToggleVisibility = { viewModel.toggleRasterLayerVisibility(layer.id) },
-                    onDelete = { viewModel.deleteRasterLayer(layer.id) },
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
 
-            // ── Groups & POIs (includes live POI layers at top) ───────────
+            // ── POIs ──────────────────────────────────────────────────────
             if (googlePlacesGroup != null || osmPoiGroup != null ||
-                filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()
+                filteredPoiGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()
             ) {
                 item {
                     SectionHeaderWithAction(
-                        title = "Groups & POIs",
+                        title = "POIs",
                         isLoading = isImporting,
                         onAction = {
                             if (hasAllFilesPermission) showFolderPicker = true
@@ -587,19 +625,19 @@ fun LibraryScreen(
                     }
                 }
 
-                filteredGroups.forEach { group ->
+                filteredPoiGroups.forEach { group ->
                     val isCollapsible = !group.isImported
                     val isExpanded = isCollapsible && group.id in expandedGroups
                     val isGroupSelected = (selectionMode as? LibrarySelectionMode.GroupSelection)
                         ?.selectedIds?.contains(group.id) == true
-                    val poiCount = if (group.isBulk) group.bulkPoiCount else poisByGroup[group.id]?.size ?: 0
+                    val itemCount = if (group.isBulk) group.bulkPoiCount else poisByGroup[group.id]?.size ?: 0
 
                     item(key = "group-${group.id}") {
                         val isGroupImporting = isImporting &&
                             importingFolderName?.equals(group.name, ignoreCase = true) == true
                         GroupHeaderRow(
                             group = group,
-                            poiCount = poiCount,
+                            itemCount = itemCount,
                             isCollapsible = isCollapsible,
                             isExpanded = isExpanded,
                             isSelected = isGroupSelected,
@@ -611,13 +649,11 @@ fun LibraryScreen(
                                         if (isCollapsible) viewModel.toggleCollapse(group.id)
                                         else onEditGroup(group.id)
                                     is LibrarySelectionMode.GroupSelection -> viewModel.toggleGroupSelection(group.id)
-                                    is LibrarySelectionMode.RowSelection -> Unit
+                                    else -> Unit
                                 }
                             },
                             onLongPress = {
-                                if (selectionMode is LibrarySelectionMode.None) {
-                                    viewModel.enterGroupSelection(group.id)
-                                }
+                                if (selectionMode is LibrarySelectionMode.None) viewModel.enterGroupSelection(group.id)
                             },
                             onEditTap = { onEditGroup(group.id) },
                             onToggleVisibility = { viewModel.toggleGroupVisibility(group) },
@@ -664,13 +700,11 @@ fun LibraryScreen(
                                     when (selectionMode) {
                                         is LibrarySelectionMode.None -> onEditPoi(poi.id)
                                         is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(poi.id)
-                                        is LibrarySelectionMode.GroupSelection -> Unit
+                                        else -> Unit
                                     }
                                 },
                                 onLongPress = {
-                                    if (selectionMode is LibrarySelectionMode.None) {
-                                        viewModel.enterRowSelection(poi.id)
-                                    }
+                                    if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(poi.id)
                                 },
                                 onToggleVisibility = { viewModel.togglePoiVisibility(poi) },
                             )
@@ -678,10 +712,8 @@ fun LibraryScreen(
                         }
                     }
                 }
-            }
 
-            // ── Orphaned POIs ─────────────────────────────────────────────
-            if (filteredOrphanedPois.isNotEmpty()) {
+                // ── Orphaned POIs ──────────────────────────────────────────
                 items(filteredOrphanedPois, key = { "orphan-${it.id}" }) { poi ->
                     val isSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
                         ?.selectedIds?.contains(poi.id) == true
@@ -694,13 +726,11 @@ fun LibraryScreen(
                             when (selectionMode) {
                                 is LibrarySelectionMode.None -> onEditPoi(poi.id)
                                 is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(poi.id)
-                                is LibrarySelectionMode.GroupSelection -> Unit
+                                else -> Unit
                             }
                         },
                         onLongPress = {
-                            if (selectionMode is LibrarySelectionMode.None) {
-                                viewModel.enterRowSelection(poi.id)
-                            }
+                            if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(poi.id)
                         },
                         onToggleVisibility = { viewModel.togglePoiVisibility(poi) },
                     )
@@ -708,23 +738,152 @@ fun LibraryScreen(
                 }
             }
 
+
             // ── Plans ─────────────────────────────────────────────────────
-            if (plans.isNotEmpty()) {
-                item { SectionHeader("Plans") }
-                items(plans, key = { "plan-${it.id}" }) { plan ->
+            if (filteredPlanGroups.isNotEmpty() || filteredOrphanedPlans.isNotEmpty()) {
+                item(key = "plans-header") { SectionHeader("Plans") }
+
+                filteredPlanGroups.forEach { group ->
+                    val isExpanded = group.id in expandedGroups
+                    val isGroupSelected = (selectionMode as? LibrarySelectionMode.GroupSelection)
+                        ?.selectedIds?.contains(group.id) == true
+                    val itemCount = plansByGroup[group.id]?.size ?: 0
+
+                    item(key = "pgroup-${group.id}") {
+                        GroupHeaderRow(
+                            group = group,
+                            itemCount = itemCount,
+                            isCollapsible = true,
+                            isExpanded = isExpanded,
+                            isSelected = isGroupSelected,
+                            isImporting = false,
+                            selectionMode = selectionMode,
+                            onTap = {
+                                when (selectionMode) {
+                                    is LibrarySelectionMode.None -> viewModel.toggleCollapse(group.id)
+                                    is LibrarySelectionMode.GroupSelection -> viewModel.toggleGroupSelection(group.id)
+                                    else -> Unit
+                                }
+                            },
+                            onLongPress = {
+                                if (selectionMode is LibrarySelectionMode.None) viewModel.enterGroupSelection(group.id)
+                            },
+                            onEditTap = { onEditGroup(group.id) },
+                            onToggleVisibility = { viewModel.toggleGroupVisibility(group) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+
+                    if (isExpanded) {
+                        val groupPlans = plansByGroup[group.id].orEmpty()
+                        items(groupPlans, key = { "gplan-${it.id}" }) { plan ->
+                            val isPlanSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
+                                ?.selectedIds?.contains(plan.id) == true
+                            PlanRow(
+                                plan = plan,
+                                isSelected = isPlanSelected,
+                                selectionMode = selectionMode,
+                                onTap = {
+                                    when (selectionMode) {
+                                        is LibrarySelectionMode.None -> onOpenPlan(plan.id)
+                                        is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(plan.id)
+                                        else -> Unit
+                                    }
+                                },
+                                onLongPress = {
+                                    if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(plan.id)
+                                },
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(start = 24.dp, end = 16.dp))
+                        }
+                    }
+                }
+
+                items(filteredOrphanedPlans, key = { "plan-${it.id}" }) { plan ->
+                    val isPlanSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
+                        ?.selectedIds?.contains(plan.id) == true
                     PlanRow(
                         plan = plan,
-                        onTap = { onOpenPlan(plan.id) },
-                        onLongPress = { planToDelete = plan },
+                        isSelected = isPlanSelected,
+                        selectionMode = selectionMode,
+                        onTap = {
+                            when (selectionMode) {
+                                is LibrarySelectionMode.None -> onOpenPlan(plan.id)
+                                is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(plan.id)
+                                else -> Unit
+                            }
+                        },
+                        onLongPress = {
+                            if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(plan.id)
+                        },
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
             }
 
             // ── Routes ────────────────────────────────────────────────────
-            if (filteredRoutes.isNotEmpty()) {
-                item { SectionHeader("Routes") }
-                items(filteredRoutes, key = { "route-${it.id}" }) { route ->
+            if (filteredRouteGroups.isNotEmpty() || filteredOrphanedRoutes.isNotEmpty()) {
+                item(key = "routes-header") { SectionHeader("Routes") }
+
+                filteredRouteGroups.forEach { group ->
+                    val isExpanded = group.id in expandedGroups
+                    val isGroupSelected = (selectionMode as? LibrarySelectionMode.GroupSelection)
+                        ?.selectedIds?.contains(group.id) == true
+                    val itemCount = routesByGroup[group.id]?.size ?: 0
+
+                    item(key = "rgroup-${group.id}") {
+                        GroupHeaderRow(
+                            group = group,
+                            itemCount = itemCount,
+                            isCollapsible = true,
+                            isExpanded = isExpanded,
+                            isSelected = isGroupSelected,
+                            isImporting = false,
+                            selectionMode = selectionMode,
+                            onTap = {
+                                when (selectionMode) {
+                                    is LibrarySelectionMode.None -> viewModel.toggleCollapse(group.id)
+                                    is LibrarySelectionMode.GroupSelection -> viewModel.toggleGroupSelection(group.id)
+                                    else -> Unit
+                                }
+                            },
+                            onLongPress = {
+                                if (selectionMode is LibrarySelectionMode.None) viewModel.enterGroupSelection(group.id)
+                            },
+                            onEditTap = { onEditGroup(group.id) },
+                            onToggleVisibility = { viewModel.toggleGroupVisibility(group) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+
+                    if (isExpanded) {
+                        val groupRoutes = routesByGroup[group.id].orEmpty()
+                        items(groupRoutes, key = { "groute-${it.id}" }) { route ->
+                            val isRouteSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
+                                ?.selectedIds?.contains(route.id) == true
+                            RouteRow(
+                                route = route,
+                                isSelected = isRouteSelected,
+                                selectionMode = selectionMode,
+                                onTap = {
+                                    when (selectionMode) {
+                                        is LibrarySelectionMode.None -> onEditRoute(route.id)
+                                        is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(route.id)
+                                        else -> Unit
+                                    }
+                                },
+                                onLongPress = {
+                                    if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(route.id)
+                                },
+                                onToggleVisibility = { viewModel.toggleRouteVisibility(route) },
+                                onIncompleteIconTap = { incompleteRoute = route },
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(start = 24.dp, end = 16.dp))
+                        }
+                    }
+                }
+
+                items(filteredOrphanedRoutes, key = { "route-${it.id}" }) { route ->
                     val isSelected = (selectionMode as? LibrarySelectionMode.RowSelection)
                         ?.selectedIds?.contains(route.id) == true
                     RouteRow(
@@ -735,13 +894,11 @@ fun LibraryScreen(
                             when (selectionMode) {
                                 is LibrarySelectionMode.None -> onEditRoute(route.id)
                                 is LibrarySelectionMode.RowSelection -> viewModel.toggleRowSelection(route.id)
-                                is LibrarySelectionMode.GroupSelection -> Unit
+                                else -> Unit
                             }
                         },
                         onLongPress = {
-                            if (selectionMode is LibrarySelectionMode.None) {
-                                viewModel.enterRowSelection(route.id)
-                            }
+                            if (selectionMode is LibrarySelectionMode.None) viewModel.enterRowSelection(route.id)
                         },
                         onToggleVisibility = { viewModel.toggleRouteVisibility(route) },
                         onIncompleteIconTap = { incompleteRoute = route },
@@ -751,7 +908,10 @@ fun LibraryScreen(
             }
 
             // ── Empty state ───────────────────────────────────────────────
-            if (filteredGroups.isEmpty() && filteredOrphanedPois.isEmpty() && filteredRoutes.isEmpty() && plans.isEmpty()) {
+            if (filteredAllGroups.isEmpty() && filteredOrphanedPois.isEmpty() &&
+                filteredOrphanedRoutes.isEmpty() && filteredOrphanedPlans.isEmpty() &&
+                googlePlacesGroup == null && osmPoiGroup == null
+            ) {
                 item {
                     Box(
                         modifier = Modifier
@@ -839,54 +999,41 @@ private fun SectionHeaderWithAction(
 
 // ── Raster layer row ──────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RasterLayerRow(
     layer: RasterLayer,
+    isSelected: Boolean,
+    selectionMode: LibrarySelectionMode,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
     onToggleVisibility: () -> Unit,
-    onDelete: () -> Unit,
 ) {
-    var showDeleteDialog by remember { mutableStateOf(false) }
-
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete \"${layer.name}\"?") },
-            text = { Text("This will remove the raster layer and delete its tile file. This cannot be undone.") },
-            confirmButton = {
-                TextButton(
-                    onClick = { showDeleteDialog = false; onDelete() },
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
-            },
-        )
-    }
+    val backgroundColor = if (isSelected)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+    else
+        MaterialTheme.colorScheme.surface
 
     ListItem(
         headlineContent = { Text(layer.name, style = MaterialTheme.typography.bodyLarge) },
+        leadingContent = if (isSelected) {
+            { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+        } else null,
         trailingContent = {
-            Row {
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete layer",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
-                IconButton(onClick = onToggleVisibility) {
-                    Icon(
-                        imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        contentDescription = if (layer.isVisible) "Hide layer" else "Show layer",
-                        tint = if (layer.isVisible) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    )
-                }
+            IconButton(onClick = onToggleVisibility) {
+                Icon(
+                    imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    contentDescription = if (layer.isVisible) "Hide layer" else "Show layer",
+                    tint = if (layer.isVisible) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
             }
         },
+        colors = ListItemDefaults.colors(containerColor = backgroundColor),
+        modifier = Modifier.combinedClickable(
+            onClick = onTap,
+            onLongClick = onLongPress,
+        ),
     )
 }
 
@@ -918,7 +1065,7 @@ private fun MapLayerRow(
 @Composable
 private fun GroupHeaderRow(
     group: Group,
-    poiCount: Int,
+    itemCount: Int,
     isCollapsible: Boolean,
     isExpanded: Boolean,
     isSelected: Boolean,
@@ -938,9 +1085,9 @@ private fun GroupHeaderRow(
         MaterialTheme.colorScheme.surface
 
     val countText = when {
-        poiCount == 0 -> group.description
-        group.description.isNullOrEmpty() -> "$poiCount POI${if (poiCount != 1) "s" else ""}"
-        else -> "${group.description} · $poiCount POI${if (poiCount != 1) "s" else ""}"
+        itemCount == 0 -> group.description
+        group.description.isNullOrEmpty() -> "$itemCount item${if (itemCount != 1) "s" else ""}"
+        else -> "${group.description} · $itemCount item${if (itemCount != 1) "s" else ""}"
     }
 
     ListItem(
@@ -981,37 +1128,35 @@ private fun GroupHeaderRow(
                 }
             }
         },
-        trailingContent = if (selectionMode is LibrarySelectionMode.None) {
-            {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isImporting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .padding(end = 4.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    }
-                    if (isCollapsible) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
-                            modifier = Modifier.padding(start = 8.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(onClick = onToggleVisibility) {
-                        Icon(
-                            imageVector = if (group.isVisible) Icons.Default.Visibility
-                                          else Icons.Default.VisibilityOff,
-                            contentDescription = if (group.isVisible) "Hide" else "Show",
-                            tint = if (group.isVisible) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                        )
-                    }
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isImporting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .padding(end = 4.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                if (isCollapsible) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier.padding(start = 8.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onToggleVisibility) {
+                    Icon(
+                        imageVector = if (group.isVisible) Icons.Default.Visibility
+                                      else Icons.Default.VisibilityOff,
+                        contentDescription = if (group.isVisible) "Hide" else "Show",
+                        tint = if (group.isVisible) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    )
                 }
             }
-        } else null,
+        },
     )
 }
 
@@ -1058,18 +1203,16 @@ private fun PoiRow(
                 Icon(Icons.Default.LocationOn, contentDescription = null)
             }
         },
-        trailingContent = if (selectionMode is LibrarySelectionMode.None) {
-            {
-                IconButton(onClick = onToggleVisibility) {
-                    Icon(
-                        imageVector = if (poi.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        contentDescription = if (poi.isVisible) "Hide" else "Show",
-                        tint = if (poi.isVisible) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    )
-                }
+        trailingContent = {
+            IconButton(onClick = onToggleVisibility) {
+                Icon(
+                    imageVector = if (poi.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                    contentDescription = if (poi.isVisible) "Hide" else "Show",
+                    tint = if (poi.isVisible) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
             }
-        } else null,
+        },
     )
 }
 
@@ -1121,29 +1264,27 @@ private fun RouteRow(
                 )
             }
         },
-        trailingContent = if (selectionMode is LibrarySelectionMode.None) {
-            {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isIncomplete) {
-                        IconButton(onClick = onIncompleteIconTap) {
-                            Icon(
-                                Icons.Default.BrokenImage,
-                                contentDescription = "Incomplete recording",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                    IconButton(onClick = onToggleVisibility) {
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isIncomplete) {
+                    IconButton(onClick = onIncompleteIconTap) {
                         Icon(
-                            imageVector = if (route.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = if (route.isVisible) "Hide" else "Show",
-                            tint = if (route.isVisible) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                            Icons.Default.BrokenImage,
+                            contentDescription = "Incomplete recording",
+                            tint = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
+                IconButton(onClick = onToggleVisibility) {
+                    Icon(
+                        imageVector = if (route.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = if (route.isVisible) "Hide" else "Show",
+                        tint = if (route.isVisible) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    )
+                }
             }
-        } else null,
+        },
     )
 }
 
@@ -1153,13 +1294,21 @@ private fun RouteRow(
 @Composable
 private fun PlanRow(
     plan: Plan,
+    isSelected: Boolean,
+    selectionMode: LibrarySelectionMode,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     val stopCount = plan.destinations.size
     val dateStr = SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(Date(plan.createdAt))
+    val containerColor = if (isSelected)
+        MaterialTheme.colorScheme.primaryContainer
+    else
+        MaterialTheme.colorScheme.surface
+
     ListItem(
         modifier = Modifier.combinedClickable(onClick = onTap, onLongClick = onLongPress),
+        colors = ListItemDefaults.colors(containerColor = containerColor),
         headlineContent = { Text(plan.name) },
         supportingContent = {
             Text(
@@ -1168,11 +1317,24 @@ private fun PlanRow(
             )
         },
         leadingContent = {
-            Icon(
-                Icons.Default.LocationOn,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            if (isSelected) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
         },
     )
 }

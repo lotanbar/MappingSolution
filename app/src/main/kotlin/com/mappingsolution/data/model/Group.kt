@@ -2,6 +2,8 @@ package com.mappingsolution.data.model
 
 import java.util.UUID
 
+enum class GroupType { POI, ROUTE, PLAN }
+
 data class Group(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -15,6 +17,7 @@ data class Group(
     val isBulk: Boolean = false,
     /** Number of POIs in a bulk group (stored in the group file to avoid scanning the jsonl). */
     val bulkPoiCount: Int = 0,
+    val type: GroupType = GroupType.POI,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mappingsolution.data.model.GroupType
 import com.mappingsolution.ui.common.ColorSelectorField
 import com.mappingsolution.ui.common.IconCatalog
 
@@ -59,6 +60,39 @@ fun GroupFormScreen(
                     .padding(top = 12.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                // Type selector (only when creating)
+                if (!viewModel.isEditing) {
+                    Column {
+                        Text(
+                            text = "Type",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            GroupType.entries.forEachIndexed { index, type ->
+                                SegmentedButton(
+                                    selected = state.type == type,
+                                    onClick = { viewModel.onTypeChange(type) },
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index = index,
+                                        count = GroupType.entries.size,
+                                    ),
+                                    label = {
+                                        Text(
+                                            when (type) {
+                                                GroupType.POI   -> "POIs"
+                                                GroupType.ROUTE -> "Routes"
+                                                GroupType.PLAN  -> "Plans"
+                                            }
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Name
                 OutlinedTextField(
                     value = state.name,

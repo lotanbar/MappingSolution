@@ -59,6 +59,34 @@ class PlanFileRepository @Inject constructor(private val storageManager: Storage
         _plans.value = _plans.value.filter { it.id != id }
     }
 
+    suspend fun deleteByIds(ids: List<String>) = withContext(Dispatchers.IO) {
+        val toDelete = _plans.value.filter { it.id in ids }
+        toDelete.forEach { storageManager.getPlanFile(it.name, it.id).delete() }
+        _plans.value = _plans.value.filter { it.id !in ids }
+    }
+
+    suspend fun orphan(ids: List<String>) = withContext(Dispatchers.IO) {
+        val updated = _plans.value.map { plan ->
+            if (plan.id in ids && plan.groupId != null) {
+                val u = plan.copy(groupId = null, updatedAt = System.currentTimeMillis())
+                writePlan(u)
+                u
+            } else plan
+        }
+        _plans.value = updated.sortedByDescending { it.createdAt }
+    }
+
+    suspend fun moveToGroup(ids: List<String>, groupId: String) = withContext(Dispatchers.IO) {
+        val updated = _plans.value.map { plan ->
+            if (plan.id in ids && plan.groupId == null) {
+                val u = plan.copy(groupId = groupId, updatedAt = System.currentTimeMillis())
+                writePlan(u)
+                u
+            } else plan
+        }
+        _plans.value = updated.sortedByDescending { it.createdAt }
+    }
+
     private fun writePlan(plan: Plan) {
         val destinationsJson = JSONArray().apply {
             plan.destinations.forEach { dest ->
@@ -76,6 +104,7 @@ class PlanFileRepository @Inject constructor(private val storageManager: Storage
             put("id", plan.id)
             put("name", plan.name)
             put("destinations", destinationsJson)
+            plan.groupId?.let { put("groupId", it) }
             put("createdAt", plan.createdAt)
             put("updatedAt", plan.updatedAt)
         }
@@ -102,6 +131,7 @@ class PlanFileRepository @Inject constructor(private val storageManager: Storage
             id = json.getString("id"),
             name = json.getString("name"),
             destinations = destinations,
+            groupId = json.optString("groupId").takeIf { it.isNotEmpty() },
             createdAt = json.getLong("createdAt"),
             updatedAt = json.getLong("updatedAt"),
         )

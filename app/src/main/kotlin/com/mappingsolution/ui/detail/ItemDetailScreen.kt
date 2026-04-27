@@ -68,23 +68,19 @@ fun ItemDetailScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
-    val title = when (val item = state.item) {
-        is DetailItem.PoiDetail -> item.poi.name
-        is DetailItem.RouteDetail -> item.route.name
-        null -> if (state.isLoading) "…" else "Not found"
-    }
+    val isRoute = state.item is DetailItem.RouteDetail
 
     Scaffold(
-        topBar = {
+        topBar = if (isRoute) ({
             TopAppBar(
-                title = { Text(title) },
+                title = { Text((state.item as? DetailItem.RouteDetail)?.route?.name ?: "") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
             )
-        }
+        }) else ({})
     ) { padding ->
         if (state.isLoading) {
             Box(

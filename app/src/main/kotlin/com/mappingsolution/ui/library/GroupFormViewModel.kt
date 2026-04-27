@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mappingsolution.data.fs.DuplicateFieldError
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.GroupType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ data class GroupFormState(
     val description: String = "",
     val iconKey: String = "place",
     val color: String = "#FF2196F3",
+    val type: GroupType = GroupType.POI,
     val nameError: String? = null,
     val descriptionError: String? = null,
     val iconError: String? = null,
@@ -52,6 +54,7 @@ class GroupFormViewModel @Inject constructor(
                             description = group.description ?: "",
                             iconKey = group.iconKey,
                             color = group.color,
+                            type = group.type,
                             isLoading = false,
                         )
                     }
@@ -66,6 +69,7 @@ class GroupFormViewModel @Inject constructor(
     fun onDescriptionChange(value: String) = _state.update { it.copy(description = value, descriptionError = null) }
     fun onIconChange(key: String) = _state.update { it.copy(iconKey = key, iconError = null) }
     fun onColorChange(hex: String) = _state.update { it.copy(color = hex, colorError = null) }
+    fun onTypeChange(type: GroupType) { if (!isEditing) _state.update { it.copy(type = type) } }
 
     fun save(onSuccess: () -> Unit) {
         val s = _state.value
@@ -81,6 +85,7 @@ class GroupFormViewModel @Inject constructor(
                 description = s.description.trim().ifEmpty { null },
                 iconKey = s.iconKey,
                 color = s.color,
+                type = s.type,
             )
             val result = if (groupId == null) groupRepository.insert(group)
                          else groupRepository.update(group)

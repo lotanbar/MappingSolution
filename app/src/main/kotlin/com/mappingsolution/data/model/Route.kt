@@ -8,6 +8,7 @@ data class Route(
     val name: String,
     val description: String? = null,
     val isVisible: Boolean = true,
+    val groupId: String? = null,
     val didUserTapStop: Boolean = false,
     val startedAt: Long,
     val stoppedAt: Long? = null,

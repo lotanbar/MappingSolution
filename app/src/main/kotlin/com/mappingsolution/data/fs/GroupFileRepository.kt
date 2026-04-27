@@ -1,6 +1,7 @@
 package com.mappingsolution.data.fs
 
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.GroupType
 import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
 import com.mappingsolution.data.places.OSM_POI_GROUP_ID
 import com.mappingsolution.data.util.StorageManager
@@ -245,6 +246,7 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             put("importComplete", group.importComplete)
             put("isBulk", group.isBulk)
             put("bulkPoiCount", group.bulkPoiCount)
+            put("type", group.type.name)
             put("createdAt", group.createdAt)
             put("updatedAt", group.updatedAt)
         }
@@ -264,6 +266,7 @@ class GroupFileRepository @Inject constructor(private val storageManager: Storag
             importComplete = json.optBoolean("importComplete", true),
             isBulk = json.optBoolean("isBulk", false),
             bulkPoiCount = json.optInt("bulkPoiCount", 0),
+            type = runCatching { GroupType.valueOf(json.optString("type", "POI")) }.getOrDefault(GroupType.POI),
             createdAt = json.getLong("createdAt"),
             updatedAt = json.getLong("updatedAt"),
         )

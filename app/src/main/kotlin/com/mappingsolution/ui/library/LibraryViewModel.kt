@@ -20,6 +20,7 @@ import com.mappingsolution.data.fs.RasterLayerRepository
 import com.mappingsolution.data.map.MapLayersState
 import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.GroupType
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.model.RasterLayer
@@ -60,6 +61,7 @@ sealed interface LibrarySelectionMode {
     data object None : LibrarySelectionMode
     data class GroupSelection(val selectedIds: Set<String> = emptySet()) : LibrarySelectionMode
     data class RowSelection(val selectedIds: Set<String> = emptySet()) : LibrarySelectionMode
+    data class RasterLayerSelection(val selectedIds: Set<String> = emptySet()) : LibrarySelectionMode
 }
 
 @HiltViewModel
@@ -88,8 +90,12 @@ class LibraryViewModel @Inject constructor(
     fun setMapStyle(style: MapStyle) = mapLayersState.setMapStyle(style)
     fun toggleHillshade() = mapLayersState.setHillshadeVisible(!mapLayersState.hillshadeVisible.value)
     fun toggleRasterLayerVisibility(id: String) = mapLayersState.toggleRasterLayerVisibility(id)
-    fun deleteRasterLayer(id: String) {
-        viewModelScope.launch { rasterLayerRepository.delete(id) }
+    fun deleteSelectedRasterLayers() {
+        val ids = (_selectionMode.value as? LibrarySelectionMode.RasterLayerSelection)?.selectedIds ?: return
+        viewModelScope.launch {
+            ids.forEach { rasterLayerRepository.delete(it) }
+            clearSelection()
+        }
     }
 
     // ── Raw data ──────────────────────────────────────────────────────────
@@ -100,9 +106,7 @@ class LibraryViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val _allRoutes = routeRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Saved plans, newest first. */
-    val plans: StateFlow<List<Plan>> = planRepository.observeAll()
+    private val _allPlans = planRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** All groups unfiltered — used for the group-picker dialog in un-orphan. */
@@ -153,22 +157,57 @@ class LibraryViewModel @Inject constructor(
 
     // ── Filtered lists ────────────────────────────────────────────────────
 
-    /** Groups shown in the list: excludes the seeded places groups (rendered separately). */
-    val filteredGroups: StateFlow<List<Group>> = combine(
-        _allGroups, _allPois, _searchQuery,
-    ) { groups, pois, query ->
-        val userGroups = groups.filter { it.id != GOOGLE_PLACES_GROUP_ID && it.id != OSM_POI_GROUP_ID }
+    private fun makeFilteredGroupFlow(type: GroupType) = combine(
+        _allGroups, _allPois, _allRoutes, _allPlans, _searchQuery,
+    ) { groups, pois, routes, plans, query ->
+        val userGroups = groups.filter {
+            it.id != GOOGLE_PLACES_GROUP_ID && it.id != OSM_POI_GROUP_ID && it.type == type
+        }
         if (query.isBlank()) return@combine userGroups
         val poisByGroup = pois.groupBy { it.groupId }
+        val routesByGroup = routes.groupBy { it.groupId }
+        val plansByGroup = plans.groupBy { it.groupId }
         userGroups.filter { g ->
             g.name.contains(query, ignoreCase = true) ||
-                poisByGroup[g.id]?.any { it.name.contains(query, ignoreCase = true) } == true
+                poisByGroup[g.id]?.any { it.name.contains(query, ignoreCase = true) } == true ||
+                routesByGroup[g.id]?.any { it.name.contains(query, ignoreCase = true) } == true ||
+                plansByGroup[g.id]?.any { it.name.contains(query, ignoreCase = true) } == true
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    /** POI groups shown in the library (excludes seeded places groups). */
+    val filteredPoiGroups: StateFlow<List<Group>> =
+        makeFilteredGroupFlow(GroupType.POI)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Route groups shown in the library. */
+    val filteredRouteGroups: StateFlow<List<Group>> =
+        makeFilteredGroupFlow(GroupType.ROUTE)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Plan groups shown in the library. */
+    val filteredPlanGroups: StateFlow<List<Group>> =
+        makeFilteredGroupFlow(GroupType.PLAN)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** All user groups (all types, unfiltered by search) — used for empty-state check. */
+    val filteredAllGroups: StateFlow<List<Group>> = _allGroups
+        .map { groups -> groups.filter { it.id != GOOGLE_PLACES_GROUP_ID && it.id != OSM_POI_GROUP_ID } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** All grouped POIs keyed by groupId (unfiltered by search, for collapse rendering). */
     val poisByGroup: StateFlow<Map<String, List<Poi>>> = _allPois
         .map { pois -> pois.filter { it.groupId != null }.groupBy { it.groupId!! } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Grouped routes keyed by groupId (unfiltered by search, for collapse rendering). */
+    val routesByGroup: StateFlow<Map<String, List<Route>>> = _allRoutes
+        .map { routes -> routes.filter { it.groupId != null }.groupBy { it.groupId!! } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Grouped plans keyed by groupId (unfiltered by search, for collapse rendering). */
+    val plansByGroup: StateFlow<Map<String, List<Plan>>> = _allPlans
+        .map { plans -> plans.filter { it.groupId != null }.groupBy { it.groupId!! } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** Orphaned POIs (no group) filtered by search. */
@@ -179,29 +218,61 @@ class LibraryViewModel @Inject constructor(
         if (query.isBlank()) orphans else orphans.filter { it.name.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Routes filtered by search. */
-    val filteredRoutes: StateFlow<List<Route>> = combine(
+    /** Orphaned routes (no group) filtered by search. */
+    val filteredOrphanedRoutes: StateFlow<List<Route>> = combine(
         _allRoutes, _searchQuery,
     ) { routes, query ->
-        if (query.isBlank()) routes else routes.filter { it.name.contains(query, ignoreCase = true) }
+        val orphans = routes.filter { it.groupId == null }
+        if (query.isBlank()) orphans else orphans.filter { it.name.contains(query, ignoreCase = true) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Orphaned plans (no group) filtered by search. */
+    val filteredOrphanedPlans: StateFlow<List<Plan>> = combine(
+        _allPlans, _searchQuery,
+    ) { plans, query ->
+        val orphans = plans.filter { it.groupId == null }
+        if (query.isBlank()) orphans else orphans.filter { it.name.contains(query, ignoreCase = true) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Groups to show in the "move to group" picker, filtered to only the types of orphaned
+     * items currently selected (so you don't assign a route to a POI group, etc.).
+     */
+    val groupPickerGroups: StateFlow<List<Group>> = combine(
+        _selectionMode, _allPois, _allRoutes, _allPlans, _allGroups,
+    ) { mode, pois, routes, plans, allGroups ->
+        val ids = (mode as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return@combine emptyList()
+        val types = buildSet {
+            if (pois.any { it.id in ids && it.groupId == null }) add(GroupType.POI)
+            if (routes.any { it.id in ids && it.groupId == null }) add(GroupType.ROUTE)
+            if (plans.any { it.id in ids && it.groupId == null }) add(GroupType.PLAN)
+        }
+        allGroups.filter {
+            it.id != GOOGLE_PLACES_GROUP_ID && it.id != OSM_POI_GROUP_ID && it.type in types
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
 
     // ── Row-selection action availability ─────────────────────────────────
 
-    /** True when selection contains a POI that already has a group (can be orphaned). */
+    /** True when selection contains any item that already has a group (can be orphaned). */
     val canOrphanSelection: StateFlow<Boolean> = combine(
-        _selectionMode, _allPois,
-    ) { mode, pois ->
+        _selectionMode, _allPois, _allRoutes, _allPlans,
+    ) { mode, pois, routes, plans ->
         val ids = (mode as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return@combine false
-        pois.any { it.id in ids && it.groupId != null }
+        pois.any { it.id in ids && it.groupId != null } ||
+            routes.any { it.id in ids && it.groupId != null } ||
+            plans.any { it.id in ids && it.groupId != null }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** True when selection contains an orphaned POI (can be moved to a group). */
+    /** True when selection contains any ungrouped item (can be moved to a group). */
     val canUnorphanSelection: StateFlow<Boolean> = combine(
-        _selectionMode, _allPois,
-    ) { mode, pois ->
+        _selectionMode, _allPois, _allRoutes, _allPlans,
+    ) { mode, pois, routes, plans ->
         val ids = (mode as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return@combine false
-        pois.any { it.id in ids && it.groupId == null }
+        pois.any { it.id in ids && it.groupId == null } ||
+            routes.any { it.id in ids && it.groupId == null } ||
+            plans.any { it.id in ids && it.groupId == null }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     // ── Search ────────────────────────────────────────────────────────────
@@ -224,6 +295,10 @@ class LibraryViewModel @Inject constructor(
         _selectionMode.value = LibrarySelectionMode.RowSelection(setOf(id))
     }
 
+    fun enterRasterLayerSelection(id: String) {
+        _selectionMode.value = LibrarySelectionMode.RasterLayerSelection(setOf(id))
+    }
+
     fun toggleGroupSelection(groupId: String) {
         val current = _selectionMode.value as? LibrarySelectionMode.GroupSelection ?: return
         val updated = if (groupId in current.selectedIds) current.selectedIds - groupId
@@ -234,6 +309,14 @@ class LibraryViewModel @Inject constructor(
 
     fun toggleRowSelection(id: String) {
         val current = _selectionMode.value as? LibrarySelectionMode.RowSelection ?: return
+        val updated = if (id in current.selectedIds) current.selectedIds - id
+                      else current.selectedIds + id
+        _selectionMode.value = if (updated.isEmpty()) LibrarySelectionMode.None
+                                else current.copy(selectedIds = updated)
+    }
+
+    fun toggleRasterLayerSelection(id: String) {
+        val current = _selectionMode.value as? LibrarySelectionMode.RasterLayerSelection ?: return
         val updated = if (id in current.selectedIds) current.selectedIds - id
                       else current.selectedIds + id
         _selectionMode.value = if (updated.isEmpty()) LibrarySelectionMode.None
@@ -284,7 +367,7 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Delete the selected groups; their POIs become orphaned. */
+    /** Delete the selected groups; their POIs, routes, and plans become orphaned. */
     fun orphanSelectedGroups() {
         val ids = (_selectionMode.value as? LibrarySelectionMode.GroupSelection)?.selectedIds ?: return
         viewModelScope.launch {
@@ -294,6 +377,8 @@ class LibraryViewModel @Inject constructor(
             val regularIds = selectedGroups.filter { !it.isBulk }.map { it.id }.toSet()
             // Bulk groups have no individual POIs in poiRepository — just delete the group record
             poiRepository.orphan(_allPois.value.filter { it.groupId in regularIds }.map { it.id })
+            routeRepository.orphan(_allRoutes.value.filter { it.groupId in regularIds }.map { it.id })
+            planRepository.orphan(_allPlans.value.filter { it.groupId in regularIds }.map { it.id })
             selectedGroups.forEach { groupRepository.delete(it) }
             clearProgress()
             clearSelection()
@@ -302,32 +387,41 @@ class LibraryViewModel @Inject constructor(
 
     // ── Row multi-select actions ───────────────────────────────────────────
 
-    /** Delete selected POIs and/or routes. */
+    /** Delete selected POIs, routes, and/or plans. */
     fun deleteSelectedRows() {
         val ids = (_selectionMode.value as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return
         viewModelScope.launch {
             poiRepository.deleteByIds(ids.toList())
             routeRepository.deleteByIds(ids.toList())
+            planRepository.deleteByIds(ids.toList())
             clearSelection()
         }
     }
 
-    /** Remove group assignment from all grouped POIs in the selection. */
+    /** Remove group assignment from all grouped items in the selection. */
     fun orphanSelectedRows() {
         val ids = (_selectionMode.value as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return
         viewModelScope.launch {
-            val grouped = _allPois.value.filter { it.id in ids && it.groupId != null }.map { it.id }
-            if (grouped.isNotEmpty()) poiRepository.orphan(grouped)
+            val groupedPois = _allPois.value.filter { it.id in ids && it.groupId != null }.map { it.id }
+            if (groupedPois.isNotEmpty()) poiRepository.orphan(groupedPois)
+            val groupedRoutes = _allRoutes.value.filter { it.id in ids && it.groupId != null }.map { it.id }
+            if (groupedRoutes.isNotEmpty()) routeRepository.orphan(groupedRoutes)
+            val groupedPlans = _allPlans.value.filter { it.id in ids && it.groupId != null }.map { it.id }
+            if (groupedPlans.isNotEmpty()) planRepository.orphan(groupedPlans)
             clearSelection()
         }
     }
 
-    /** Move orphaned POIs in the selection to the given group. */
+    /** Move ungrouped items in the selection to the given group. */
     fun moveSelectedRowsToGroup(groupId: String) {
         val ids = (_selectionMode.value as? LibrarySelectionMode.RowSelection)?.selectedIds ?: return
         viewModelScope.launch {
-            val orphans = _allPois.value.filter { it.id in ids && it.groupId == null }.map { it.id }
-            if (orphans.isNotEmpty()) poiRepository.moveToGroup(orphans, groupId)
+            val orphanPois = _allPois.value.filter { it.id in ids && it.groupId == null }.map { it.id }
+            if (orphanPois.isNotEmpty()) poiRepository.moveToGroup(orphanPois, groupId)
+            val orphanRoutes = _allRoutes.value.filter { it.id in ids && it.groupId == null }.map { it.id }
+            if (orphanRoutes.isNotEmpty()) routeRepository.moveToGroup(orphanRoutes, groupId)
+            val orphanPlans = _allPlans.value.filter { it.id in ids && it.groupId == null }.map { it.id }
+            if (orphanPlans.isNotEmpty()) planRepository.moveToGroup(orphanPlans, groupId)
             clearSelection()
         }
     }

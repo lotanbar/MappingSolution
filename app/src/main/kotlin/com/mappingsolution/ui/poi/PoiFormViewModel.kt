@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.mappingsolution.data.fs.GroupFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.model.Group
+import com.mappingsolution.data.model.GroupType
 import com.mappingsolution.data.model.Poi
 import com.mappingsolution.data.util.StorageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -51,6 +53,7 @@ class PoiFormViewModel @Inject constructor(
     val isEditing: Boolean get() = _poiId != null
 
     val groups: StateFlow<List<Group>> = groupRepository.observeAll()
+        .map { groups -> groups.filter { it.type == GroupType.POI } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _state = MutableStateFlow(
