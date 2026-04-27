@@ -90,6 +90,7 @@ class MainViewModel @Inject constructor(
 
     val mapStyle: MutableStateFlow<MapStyle> = mapLayersState.mapStyle
     val hillshadeVisible: MutableStateFlow<Boolean> = mapLayersState.hillshadeVisible
+    val rasterLayers: StateFlow<List<com.mappingsolution.data.model.RasterLayer>> = mapLayersState.rasterLayers
 
     /** Lat/lng of the search result last tapped in SearchNPlan — drives map camera + preview pin. */
     val searchPreviewLocation: StateFlow<Pair<Double, Double>?> =

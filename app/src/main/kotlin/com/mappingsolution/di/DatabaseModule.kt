@@ -40,4 +40,9 @@ object DatabaseModule {
     @Singleton
     fun providePlanFileRepository(storageManager: StorageManager): PlanFileRepository =
         PlanFileRepository(storageManager)
+
+    @Provides
+    @Singleton
+    fun provideRasterLayerRepository(storageManager: StorageManager): com.mappingsolution.data.fs.RasterLayerRepository =
+        com.mappingsolution.data.fs.RasterLayerRepository(storageManager)
 }

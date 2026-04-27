@@ -87,6 +87,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
+import com.mappingsolution.data.model.RasterLayer
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.ui.common.IconCatalog
@@ -124,6 +125,11 @@ fun LibraryScreen(
     val importProgressText by viewModel.importProgressText.collectAsState()
     val importProgressFraction by viewModel.importProgressFraction.collectAsState()
     val importResult by viewModel.importResult.collectAsState()
+    val isMbtilesImporting by viewModel.isMbtilesImporting.collectAsState()
+    val mbtilesImportProgressText by viewModel.mbtilesImportProgressText.collectAsState()
+    val mbtilesImportProgressFraction by viewModel.mbtilesImportProgressFraction.collectAsState()
+    val mbtilesImportResult by viewModel.mbtilesImportResult.collectAsState()
+    val rasterLayers by viewModel.rasterLayers.collectAsState()
     val googlePlaceCount by viewModel.googlePlaceCount.collectAsState()
     val osmPoiCount by viewModel.osmPoiCount.collectAsState()
     val googlePlacesGroup by viewModel.googlePlacesGroup.collectAsState()
@@ -159,6 +165,12 @@ fun LibraryScreen(
     val allFilesSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { /* ON_RESUME above will update hasAllFilesPermission */ }
+
+    val mbtilesFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.importMbtilesFile(uri)
+    }
 
     if (showAllFilesDialog) {
         AlertDialog(
@@ -234,6 +246,29 @@ fun LibraryScreen(
 
     importResult?.let { result ->
         ImportResultDialog(result = result, onDismiss = { viewModel.dismissImportResult() })
+    }
+
+    mbtilesImportResult?.let { result ->
+        when (result) {
+            is MbtilesImportResult.Success ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissMbtilesImportResult() },
+                    title = { Text("Import complete") },
+                    text = { Text("Layer \"${result.layerName}\" imported successfully.") },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.dismissMbtilesImportResult() }) { Text("OK") }
+                    },
+                )
+            is MbtilesImportResult.Failure ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissMbtilesImportResult() },
+                    title = { Text("Import failed") },
+                    text = { Text(result.error) },
+                    confirmButton = {
+                        TextButton(onClick = { viewModel.dismissMbtilesImportResult() }) { Text("OK") }
+                    },
+                )
+        }
     }
 
     if (showDeleteGroupsDialog) {
@@ -351,57 +386,6 @@ fun LibraryScreen(
                                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
                             }
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                    .clickable(enabled = !isImporting) {
-                                        if (hasAllFilesPermission) showFolderPicker = true
-                                        else showAllFilesDialog = true
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (isImporting) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Default.Input,
-                                        contentDescription = "Import",
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    )
-                                }
-                            }
-                        }
-                        if (isImporting && importProgressText.isNotEmpty()) {
-                            Text(
-                                text = importProgressText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                            )
-                            if (importProgressFraction > 0f) {
-                                LinearProgressIndicator(
-                                    progress = { importProgressFraction },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .padding(bottom = 4.dp),
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .padding(bottom = 4.dp),
-                                )
-                            }
                         }
                     }
                 }
@@ -505,11 +489,79 @@ fun LibraryScreen(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
 
+            // ── Raster Layers ─────────────────────────────────────────────
+            item(key = "raster-layers-header") {
+                SectionHeaderWithAction(
+                    title = "Raster Layers",
+                    isLoading = isMbtilesImporting,
+                    onAction = { mbtilesFileLauncher.launch("*/*") },
+                )
+            }
+            if (isMbtilesImporting && mbtilesImportProgressText.isNotEmpty()) {
+                item(key = "raster-import-progress") {
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        Text(
+                            text = mbtilesImportProgressText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(bottom = 2.dp),
+                        )
+                        if (mbtilesImportProgressFraction > 0f) {
+                            LinearProgressIndicator(
+                                progress = { mbtilesImportProgressFraction },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            items(rasterLayers, key = { "raster-${it.id}" }) { layer ->
+                RasterLayerRow(
+                    layer = layer,
+                    onToggleVisibility = { viewModel.toggleRasterLayerVisibility(layer.id) },
+                    onDelete = { viewModel.deleteRasterLayer(layer.id) },
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+
             // ── Groups & POIs (includes live POI layers at top) ───────────
             if (googlePlacesGroup != null || osmPoiGroup != null ||
                 filteredGroups.isNotEmpty() || filteredOrphanedPois.isNotEmpty()
             ) {
-                item { SectionHeader("Groups & POIs") }
+                item {
+                    SectionHeaderWithAction(
+                        title = "Groups & POIs",
+                        isLoading = isImporting,
+                        onAction = {
+                            if (hasAllFilesPermission) showFolderPicker = true
+                            else showAllFilesDialog = true
+                        },
+                    )
+                    if (isImporting && importProgressText.isNotEmpty()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            Text(
+                                text = importProgressText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                            if (importProgressFraction > 0f) {
+                                LinearProgressIndicator(
+                                    progress = { importProgressFraction },
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
                 googlePlacesGroup?.let { group ->
                     item(key = "places-group") {
                         PlacesGroupRow(
@@ -741,6 +793,94 @@ private fun SectionHeader(title: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun SectionHeaderWithAction(
+    title: String,
+    isLoading: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onAction, enabled = !isLoading) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    Icons.Default.Input,
+                    contentDescription = "Import",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+// ── Raster layer row ──────────────────────────────────────────────────────────
+
+@Composable
+private fun RasterLayerRow(
+    layer: RasterLayer,
+    onToggleVisibility: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete \"${layer.name}\"?") },
+            text = { Text("This will remove the raster layer and delete its tile file. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false; onDelete() },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    ListItem(
+        headlineContent = { Text(layer.name, style = MaterialTheme.typography.bodyLarge) },
+        trailingContent = {
+            Row {
+                IconButton(onClick = onToggleVisibility) {
+                    Icon(
+                        imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = if (layer.isVisible) "Hide layer" else "Show layer",
+                        tint = if (layer.isVisible) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    )
+                }
+                IconButton(onClick = { showDeleteDialog = true }) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete layer",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
     )
 }
 

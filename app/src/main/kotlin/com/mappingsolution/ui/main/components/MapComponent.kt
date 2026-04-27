@@ -33,6 +33,7 @@ import com.mappingsolution.createPinBitmap
 import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Poi
+import com.mappingsolution.data.model.RasterLayer
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.model.RoutePoint
 import com.mappingsolution.data.recording.RecordingPoint
@@ -50,9 +51,12 @@ import org.maplibre.android.style.layers.HillshadeLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.RasterLayer as MapLibreRasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.sources.RasterDemSource
+import org.maplibre.android.style.sources.RasterSource
+import org.maplibre.android.style.sources.TileSet
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
@@ -157,6 +161,7 @@ fun MapComponent(
     initialCamera: ViewportPreference.SavedCamera? = null,
     mapStyle: MapStyle = MapStyle.SATELLITE,
     hillshadeVisible: Boolean = true,
+    rasterLayers: List<RasterLayer> = emptyList(),
     onCameraIdle: (lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _ -> },
     onBoundsChanged: (north: Double, south: Double, east: Double, west: Double, lat: Double, lng: Double, zoom: Double, bearing: Double, tilt: Double) -> Unit = { _, _, _, _, _, _, _, _, _ -> },
     onPoiTapped: (String) -> Unit = {},
@@ -401,6 +406,61 @@ fun MapComponent(
             )
     }
 
+    // Sync raster (MBTiles) layers: add new sources/layers, remove deleted ones, update visibility
+    LaunchedEffect(rasterLayers, styleReady.value) {
+        val map = mapState.value ?: return@LaunchedEffect
+        if (!styleReady.value) return@LaunchedEffect
+        val style = map.style ?: return@LaunchedEffect
+
+        val activeIds = rasterLayers.map { it.id }.toSet()
+
+        // Remove layers/sources that no longer exist
+        style.layers
+            .filter { it.id.startsWith(RASTER_LAYER_PREFIX) }
+            .forEach { layer ->
+                val layerId = layer.id.removePrefix(RASTER_LAYER_PREFIX)
+                if (layerId !in activeIds) {
+                    style.removeLayer(layer.id)
+                    style.removeSource("$RASTER_SOURCE_PREFIX$layerId")
+                }
+            }
+
+        // Add or update each raster layer
+        rasterLayers.forEach { rasterLayer ->
+            val sourceId = "$RASTER_SOURCE_PREFIX${rasterLayer.id}"
+            val layerId = "$RASTER_LAYER_PREFIX${rasterLayer.id}"
+            val tileUrl = "http://mbtiles-local/${rasterLayer.id}/{z}/{x}/{y}"
+
+            val existing = style.getLayer(layerId) as? MapLibreRasterLayer
+            if (existing != null) {
+                // Just toggle visibility
+                existing.setProperties(
+                    PropertyFactory.visibility(
+                        if (rasterLayer.isVisible) Property.VISIBLE else Property.NONE
+                    )
+                )
+            } else {
+                // Add source + layer for the first time
+                if (style.getSource(sourceId) == null) {
+                    val tileSet = TileSet("2.2.0", tileUrl)
+                    style.addSource(RasterSource(sourceId, tileSet, 256))
+                }
+                val newLayer = MapLibreRasterLayer(layerId, sourceId).withProperties(
+                    PropertyFactory.visibility(
+                        if (rasterLayer.isVisible) Property.VISIBLE else Property.NONE
+                    ),
+                    PropertyFactory.rasterOpacity(1f),
+                )
+                // Insert above hillshade, below route lines
+                if (style.getLayer("saved-routes-lines") != null) {
+                    style.addLayerBelow(newLayer, "saved-routes-lines")
+                } else {
+                    style.addLayer(newLayer)
+                }
+            }
+        }
+    }
+
     // Re-render live route polyline whenever points change
     LaunchedEffect(liveRoutePoints, styleReady.value) {
         val map = mapState.value ?: return@LaunchedEffect
@@ -614,6 +674,9 @@ fun MapComponent(
         modifier = modifier,
     )
 }
+
+private const val RASTER_SOURCE_PREFIX = "mbtiles-source-"
+private const val RASTER_LAYER_PREFIX = "mbtiles-layer-"
 
 /**
  * Adds all custom sources, layers, images and activates the location component for a newly

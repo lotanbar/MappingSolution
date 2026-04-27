@@ -16,17 +16,20 @@ import com.mappingsolution.data.fs.ImportResult
 import com.mappingsolution.data.fs.PlanFileRepository
 import com.mappingsolution.data.fs.PoiFileRepository
 import com.mappingsolution.data.fs.RouteFileRepository
+import com.mappingsolution.data.fs.RasterLayerRepository
 import com.mappingsolution.data.map.MapLayersState
 import com.mappingsolution.data.map.MapStyle
 import com.mappingsolution.data.model.Group
 import com.mappingsolution.data.model.Plan
 import com.mappingsolution.data.model.Poi
+import com.mappingsolution.data.model.RasterLayer
 import com.mappingsolution.data.model.Route
 import com.mappingsolution.data.places.GOOGLE_PLACES_GROUP_ID
 import com.mappingsolution.data.places.GooglePlacesRepository
 import com.mappingsolution.data.places.OSM_POI_GROUP_ID
 import com.mappingsolution.data.places.OsmPoiRepository
 import com.mappingsolution.service.ImportWorker
+import com.mappingsolution.service.MbtilesImportWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -48,6 +51,11 @@ sealed class DeleteGroupResult {
     data class HasItems(val poiCount: Int) : DeleteGroupResult()
 }
 
+sealed class MbtilesImportResult {
+    data class Success(val layerName: String) : MbtilesImportResult()
+    data class Failure(val error: String) : MbtilesImportResult()
+}
+
 sealed interface LibrarySelectionMode {
     data object None : LibrarySelectionMode
     data class GroupSelection(val selectedIds: Set<String> = emptySet()) : LibrarySelectionMode
@@ -66,6 +74,7 @@ class LibraryViewModel @Inject constructor(
     private val osmPoiRepository: OsmPoiRepository,
     private val bulkPoiRepository: BulkPoiRepository,
     private val mapLayersState: MapLayersState,
+    private val rasterLayerRepository: RasterLayerRepository,
 ) : ViewModel() {
 
     private val workManager = WorkManager.getInstance(context)
@@ -74,9 +83,14 @@ class LibraryViewModel @Inject constructor(
 
     val mapStyle: StateFlow<MapStyle> = mapLayersState.mapStyle
     val hillshadeVisible: StateFlow<Boolean> = mapLayersState.hillshadeVisible
+    val rasterLayers: StateFlow<List<RasterLayer>> = mapLayersState.rasterLayers
 
     fun setMapStyle(style: MapStyle) = mapLayersState.setMapStyle(style)
     fun toggleHillshade() = mapLayersState.setHillshadeVisible(!mapLayersState.hillshadeVisible.value)
+    fun toggleRasterLayerVisibility(id: String) = mapLayersState.toggleRasterLayerVisibility(id)
+    fun deleteRasterLayer(id: String) {
+        viewModelScope.launch { rasterLayerRepository.delete(id) }
+    }
 
     // ── Raw data ──────────────────────────────────────────────────────────
 
@@ -367,6 +381,21 @@ class LibraryViewModel @Inject constructor(
                 handleWorkInfo(info)
             }
         }
+        // Reconnect to any in-flight MBTiles import when this ViewModel is (re)created
+        viewModelScope.launch {
+            workManager.getWorkInfosForUniqueWorkFlow(MBTILES_IMPORT_WORK_NAME).collect { infos ->
+                val info = when {
+                    currentMbtilesWorkId != null -> infos.firstOrNull { it.id == currentMbtilesWorkId }
+                    else -> infos.firstOrNull {
+                        it.id != dismissedMbtilesWorkId &&
+                            (it.state == WorkInfo.State.RUNNING ||
+                                it.state == WorkInfo.State.ENQUEUED ||
+                                it.state == WorkInfo.State.BLOCKED)
+                    } ?: infos.lastOrNull { it.id != dismissedMbtilesWorkId }
+                }
+                handleMbtilesWorkInfo(info)
+            }
+        }
     }
 
     private fun handleWorkInfo(info: WorkInfo?) {
@@ -453,9 +482,98 @@ class LibraryViewModel @Inject constructor(
         workManager.pruneWork()
     }
 
+    // ── MBTiles import ────────────────────────────────────────────────────
+
+    private val _isMbtilesImporting = MutableStateFlow(false)
+    val isMbtilesImporting: StateFlow<Boolean> = _isMbtilesImporting.asStateFlow()
+
+    private val _mbtilesImportProgressText = MutableStateFlow("")
+    val mbtilesImportProgressText: StateFlow<String> = _mbtilesImportProgressText.asStateFlow()
+
+    private val _mbtilesImportProgressFraction = MutableStateFlow(0f)
+    val mbtilesImportProgressFraction: StateFlow<Float> = _mbtilesImportProgressFraction.asStateFlow()
+
+    private val _mbtilesImportResult = MutableStateFlow<MbtilesImportResult?>(null)
+    val mbtilesImportResult: StateFlow<MbtilesImportResult?> = _mbtilesImportResult.asStateFlow()
+
+    private var currentMbtilesWorkId: UUID? = null
+    private var dismissedMbtilesWorkId: UUID? = null
+
+    private fun handleMbtilesWorkInfo(info: WorkInfo?) {
+        if (info == null) return
+        when (info.state) {
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                if (currentMbtilesWorkId == null) currentMbtilesWorkId = info.id
+                _isMbtilesImporting.value = true
+            }
+            WorkInfo.State.RUNNING -> {
+                if (currentMbtilesWorkId == null) currentMbtilesWorkId = info.id
+                _isMbtilesImporting.value = true
+                val bytesCopied = info.progress.getLong(MbtilesImportWorker.KEY_BYTES_COPIED, 0L)
+                val bytesTotal = info.progress.getLong(MbtilesImportWorker.KEY_BYTES_TOTAL, -1L)
+                if (bytesCopied > 0) {
+                    val copiedMb = bytesCopied / 1_048_576.0
+                    _mbtilesImportProgressText.value = if (bytesTotal > 0) {
+                        val totalMb = bytesTotal / 1_048_576.0
+                        "Copying… %.1f MB / %.1f MB".format(copiedMb, totalMb)
+                    } else {
+                        "Copying… %.1f MB".format(copiedMb)
+                    }
+                    _mbtilesImportProgressFraction.value =
+                        if (bytesTotal > 0) bytesCopied.toFloat() / bytesTotal else 0f
+                }
+            }
+            WorkInfo.State.SUCCEEDED -> {
+                if (currentMbtilesWorkId == null) currentMbtilesWorkId = info.id
+                val layerName = info.outputData.getString(MbtilesImportWorker.KEY_LAYER_NAME)
+                _mbtilesImportResult.value = MbtilesImportResult.Success(layerName ?: "")
+                clearMbtilesProgress()
+            }
+            WorkInfo.State.FAILED -> {
+                if (currentMbtilesWorkId == null) currentMbtilesWorkId = info.id
+                val error = info.outputData.getString(MbtilesImportWorker.KEY_ERROR) ?: "Import failed"
+                _mbtilesImportResult.value = MbtilesImportResult.Failure(error)
+                clearMbtilesProgress()
+            }
+            WorkInfo.State.CANCELLED -> {
+                if (currentMbtilesWorkId == null || currentMbtilesWorkId == info.id) {
+                    currentMbtilesWorkId = null
+                    clearMbtilesProgress()
+                }
+            }
+        }
+    }
+
+    private fun clearMbtilesProgress() {
+        _mbtilesImportProgressText.value = ""
+        _mbtilesImportProgressFraction.value = 0f
+        _isMbtilesImporting.value = false
+    }
+
+    fun importMbtilesFile(uri: Uri) {
+        val request = OneTimeWorkRequestBuilder<MbtilesImportWorker>()
+            .setInputData(workDataOf(MbtilesImportWorker.KEY_URI to uri.toString()))
+            .build()
+        currentMbtilesWorkId = request.id
+        dismissedMbtilesWorkId = null
+        _mbtilesImportResult.value = null
+        _isMbtilesImporting.value = true
+        _mbtilesImportProgressText.value = "Starting…"
+        _mbtilesImportProgressFraction.value = 0f
+        workManager.enqueueUniqueWork(MBTILES_IMPORT_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    fun dismissMbtilesImportResult() {
+        dismissedMbtilesWorkId = currentMbtilesWorkId
+        currentMbtilesWorkId = null
+        _mbtilesImportResult.value = null
+        workManager.pruneWork()
+    }
+
     companion object {
         private const val IMPORT_WORK_NAME = "poi_import"
         private const val TAG_FOLDER_PREFIX = "folder:"
+        private const val MBTILES_IMPORT_WORK_NAME = "mbtiles_import"
     }
 
     // ── Export ────────────────────────────────────────────────────────────

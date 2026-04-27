@@ -93,6 +93,7 @@ fun MainScreen(
     val bulkPoisRaw by viewModel.bulkPois.collectAsState()
     val currentMapStyle by viewModel.mapStyle.collectAsState()
     val hillshadeVisible by viewModel.hillshadeVisible.collectAsState()
+    val rasterLayers by viewModel.rasterLayers.collectAsState()
     val searchPreviewLocation by viewModel.searchPreviewLocation.collectAsState()
 
     // Viewport allocation: 20 Google + 20 Overpass/Imported (40 total).
@@ -348,6 +349,7 @@ fun MainScreen(
                     initialCamera = viewModel.initialCamera,
                     mapStyle = currentMapStyle,
                     hillshadeVisible = hillshadeVisible,
+                    rasterLayers = rasterLayers,
                     onCameraIdle = viewModel::saveCameraPosition,
                     onBoundsChanged = { north, south, east, west, lat, lng, zoom, bearing, tilt ->
                         viewModel.onCameraChanged(lat, lng, zoom, bearing, tilt, north, south, east, west)

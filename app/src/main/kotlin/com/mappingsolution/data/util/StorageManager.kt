@@ -102,6 +102,17 @@ class StorageManager @Inject constructor(
     fun getPlansDir(): File = File(rootDir, "plans").also { it.mkdirs() }
     fun getPlanFile(name: String, id: String): File = File(getPlansDir(), "${sanitizeName(name)}_${id.take(8)}.json")
 
+    // ── MBTiles — stored in app-private external storage (no MANAGE_EXTERNAL_STORAGE needed) ──
+    private val mbtilesRootDir: File
+        get() = (context.getExternalFilesDir(null) ?: context.filesDir)
+
+    fun getMbtilesDir(): File = File(mbtilesRootDir, "mbtiles").also { it.mkdirs() }
+
+    fun getMbtilesFile(name: String, id: String): File =
+        File(getMbtilesDir(), "${sanitizeName(name)}_${id.take(8)}.mbtiles")
+
+    fun getMbtilesTempFile(): File = File(getMbtilesDir(), "import_tmp_${System.currentTimeMillis()}.mbtiles")
+
     fun getExportsDir(): File = File(rootDir, "exports").also { it.mkdirs() }
 
     fun resolvePath(relativePath: String): File = File(rootDir, relativePath)
