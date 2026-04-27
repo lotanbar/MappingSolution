@@ -2,35 +2,48 @@ package com.mappingsolution.ui.navigation
 
 import android.os.Build
 import android.os.Environment
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -52,6 +65,18 @@ import com.mappingsolution.ui.recording.RouteFinalizeScreen
 import com.mappingsolution.ui.searchnplan.NavigationIntentHelper
 import com.mappingsolution.ui.searchnplan.SearchNPlanScreen
 import com.mappingsolution.ui.searchnplan.SearchNPlanViewModel
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 
 private const val ROUTE_MAIN = "main"
 private const val ROUTE_STORAGE_PERMISSION = "storage_permission"
@@ -82,7 +107,6 @@ private const val KEY_SELECTED_ICON = "selected_icon"
 private const val KEY_CURRENT_ICON = "current_icon"
 private const val KEY_PLAN_ID = "planId"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
@@ -104,10 +128,12 @@ fun AppNavGraph() {
         }
 
         composable(ROUTE_MAIN) { backStackEntry ->
+            val context = LocalContext.current
             val searchVm: SearchNPlanViewModel = hiltViewModel(backStackEntry)
             var searchSheetOpen by rememberSaveable { mutableStateOf(false) }
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            
+            var showSavePlanDialog by remember { mutableStateOf(false) }
+            var planNameInput by remember { mutableStateOf("") }
+
             val addedDestination = backStackEntry.savedStateHandle
                 .getStateFlow<PlanDestination?>(KEY_ADDED_DESTINATION, null)
                 .collectAsState()
@@ -118,74 +144,191 @@ fun AppNavGraph() {
                 searchSheetOpen = true
             }
 
-            MainScreen(
-                onOpenLibrary = { navController.navigate(ROUTE_LIBRARY) },
-                onAddPoi = { lat, lng -> navController.navigate("poi_form_new?lat=$lat&lng=$lng") },
-                onPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
-                onRouteTapped = { routeId -> navController.navigate("item_detail/route/$routeId") },
-                onGooglePlaceTapped = { placeId -> navController.navigate("item_detail/google_place/$placeId") },
-                onOsmPoiTapped = { osmId -> navController.navigate("item_detail/osm_poi/$osmId") },
-                onBulkPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
-                onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
-                onOpenSearch = { searchSheetOpen = true },
-            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val screenHeightPx = with(density) { maxHeight.toPx() }
+                val maxSheetOffsetPx = screenHeightPx * 0.50f
+                var sheetOffsetPx by remember { mutableFloatStateOf(screenHeightPx) }
+                val coroutineScope = rememberCoroutineScope()
+                val destinations by searchVm.destinations.collectAsState()
 
-            if (searchSheetOpen) {
-                ModalBottomSheet(
-                    onDismissRequest = {
+                // When keyboard opens, push sheet to full screen; when it closes, leave as-is
+                val imeBottomPx = WindowInsets.ime.getBottom(density)
+                LaunchedEffect(imeBottomPx) {
+                    if (searchSheetOpen && imeBottomPx > 0 && sheetOffsetPx > 0f) {
+                        animate(sheetOffsetPx, 0f, animationSpec = tween(200)) { v, _ ->
+                            sheetOffsetPx = v
+                        }
+                    }
+                }
+
+                // Keep offset in sync when screen height changes (e.g. rotation)
+                LaunchedEffect(screenHeightPx) {
+                    if (!searchSheetOpen) sheetOffsetPx = screenHeightPx
+                }
+
+                // Animate sheet in when opened
+                LaunchedEffect(searchSheetOpen) {
+                    if (searchSheetOpen) {
+                        sheetOffsetPx = screenHeightPx
+                        animate(screenHeightPx, 0f, animationSpec = tween(300)) { v, _ ->
+                            sheetOffsetPx = v
+                        }
+                    }
+                }
+
+                fun dismiss() {
+                    coroutineScope.launch {
+                        animate(sheetOffsetPx, screenHeightPx, animationSpec = tween(300)) { v, _ ->
+                            sheetOffsetPx = v
+                        }
                         searchSheetOpen = false
                         searchVm.clearPreview()
-                    },
-                    sheetState = sheetState,
-                    contentWindowInsets = { WindowInsets(0) },
-                    dragHandle = {
-                        // Must be obtained INSIDE the sheet's composition context so
-                        // clearFocus() reaches the text field that lives in this popup window.
-                        val sheetFocusManager = LocalFocusManager.current
-                        val sheetKeyboardController = LocalSoftwareKeyboardController.current
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(vertical = 10.dp)
-                                .pointerInput(Unit) {
-                                    awaitPointerEventScope {
-                                        while (true) {
-                                            // Initial pass fires before the sheet's drag handler —
-                                            // keyboard is hidden on the very first touch frame.
-                                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                                            if (event.changes.any { it.pressed && !it.previousPressed }) {
-                                                sheetFocusManager.clearFocus()
-                                                sheetKeyboardController?.hide()
+                    }
+                }
+
+                BackHandler(enabled = searchSheetOpen) { dismiss() }
+
+                MainScreen(
+                    onOpenLibrary = { navController.navigate(ROUTE_LIBRARY) },
+                    onAddPoi = { lat, lng -> navController.navigate("poi_form_new?lat=$lat&lng=$lng") },
+                    onPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
+                    onRouteTapped = { routeId -> navController.navigate("item_detail/route/$routeId") },
+                    onGooglePlaceTapped = { placeId -> navController.navigate("item_detail/google_place/$placeId") },
+                    onOsmPoiTapped = { osmId -> navController.navigate("item_detail/osm_poi/$osmId") },
+                    onBulkPoiTapped = { poiId -> navController.navigate("item_detail/poi/$poiId") },
+                    onNavigateToFinalize = { routeId -> navController.navigate("route_finalize/$routeId") },
+                    onOpenSearch = { searchSheetOpen = true },
+                )
+
+                if (searchSheetOpen) {
+                    val sheetFocusManager = LocalFocusManager.current
+                    val sheetKeyboardController = LocalSoftwareKeyboardController.current
+
+                    // Sheet — pixel offset so drag stops exactly where released
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset { IntOffset(0, sheetOffsetPx.roundToInt()) }
+                            .statusBarsPadding(),
+                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                        tonalElevation = 2.dp,
+                    ) {
+                        Column {
+                            // Drag handle: hides keyboard on first touch, moves sheet on drag
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                if (event.changes.any { it.pressed && !it.previousPressed }) {
+                                                    sheetFocusManager.clearFocus()
+                                                    sheetKeyboardController?.hide()
+                                                }
                                             }
                                         }
                                     }
+                                    .draggable(
+                                        orientation = Orientation.Vertical,
+                                        state = rememberDraggableState { delta ->
+                                            sheetOffsetPx = (sheetOffsetPx + delta).coerceIn(0f, maxSheetOffsetPx)
+                                        },
+                                        onDragStopped = { velocityPx ->
+                                            val dismissByFling = velocityPx > with(density) { 500.dp.toPx() }
+                                            if (dismissByFling) dismiss()
+                                        },
+                                    )
+                                    .padding(top = 8.dp, bottom = 16.dp),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(width = 32.dp, height = 4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                                )
+                            }
+
+                            SearchNPlanScreen(
+                                isEmbedded = true,
+                                viewModel = searchVm,
+                                onNavigateBack = { dismiss() },
+                                onOpenDetail = { type, id ->
+                                    navController.navigate("item_detail/$type/$id?fromSearch=true")
                                 },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(width = 32.dp, height = 4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    ),
                             )
                         }
-                    },
-                ) {
-                    SearchNPlanScreen(
-                        isEmbedded = true,
-                        viewModel = searchVm,
-                        onNavigateBack = {
-                            searchSheetOpen = false
-                            searchVm.clearPreview()
-                        },
-                        onOpenDetail = { type, id ->
-                            navController.navigate("item_detail/$type/$id?fromSearch=true")
-                        },
-                    )
+                    }
+
+                    // Fixed action buttons — hide as soon as sheet starts sliding down past minimum
+                    if (sheetOffsetPx <= maxSheetOffsetPx) Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .imePadding(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = { NavigationIntentHelper.launchNavigation(context, destinations) },
+                                modifier = Modifier.weight(1f),
+                                enabled = destinations.isNotEmpty(),
+                            ) {
+                                Text("Navigate")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (searchVm.openedFromLibrary) {
+                                        searchVm.savePlan()
+                                        dismiss()
+                                    } else {
+                                        planNameInput = ""
+                                        showSavePlanDialog = true
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                enabled = destinations.isNotEmpty(),
+                            ) {
+                                Text(if (searchVm.openedFromLibrary) "Edit Plan" else "Create Plan")
+                            }
+                        }
+                    }
                 }
+            }
+
+            if (showSavePlanDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSavePlanDialog = false },
+                    title = { Text("Create plan") },
+                    text = {
+                        OutlinedTextField(
+                            value = planNameInput,
+                            onValueChange = { planNameInput = it },
+                            label = { Text("Plan name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showSavePlanDialog = false
+                                searchVm.savePlan(planNameInput.trim().ifEmpty { null })
+                                // dismiss sheet after saving
+                            },
+                        ) { Text("Save") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSavePlanDialog = false }) { Text("Cancel") }
+                    },
+                )
             }
         }
 

@@ -92,12 +92,18 @@ class MbtilesImportWorker @AssistedInject constructor(
     }
 
     private suspend fun copyWithProgress(uri: Uri, dest: File) {
-        val contentResolver = context.contentResolver
-        val totalBytes = contentResolver.openFileDescriptor(uri, "r")
-            ?.use { it.statSize }
-            ?.takeIf { it > 0L } ?: -1L
+        val isFileUri = uri.scheme == "file"
+        val totalBytes = if (isFileUri) {
+            File(uri.path!!).length().takeIf { it > 0L } ?: -1L
+        } else {
+            context.contentResolver.openFileDescriptor(uri, "r")
+                ?.use { it.statSize }
+                ?.takeIf { it > 0L } ?: -1L
+        }
 
-        contentResolver.openInputStream(uri)?.use { input ->
+        val inputStream = if (isFileUri) java.io.FileInputStream(uri.path!!)
+                          else context.contentResolver.openInputStream(uri)
+        inputStream?.use { input ->
             FileOutputStream(dest).use { output ->
                 val buffer = ByteArray(BUFFER_SIZE)
                 var bytesCopied = 0L

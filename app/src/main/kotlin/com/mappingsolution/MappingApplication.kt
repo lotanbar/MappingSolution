@@ -35,6 +35,9 @@ class MappingApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        // MapLibre must be initialized before anything that touches its static context
+        org.maplibre.android.MapLibre.getInstance(this)
+
         // Register custom OkHttp client so MapLibre serves local MBTiles tiles
         HttpRequestUtil.setOkHttpClient(
             OkHttpClient.Builder()

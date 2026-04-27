@@ -166,11 +166,7 @@ fun LibraryScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { /* ON_RESUME above will update hasAllFilesPermission */ }
 
-    val mbtilesFileLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) viewModel.importMbtilesFile(uri)
-    }
+    var showMbtilesPicker by remember { mutableStateOf(false) }
 
     if (showAllFilesDialog) {
         AlertDialog(
@@ -196,6 +192,18 @@ fun LibraryScreen(
             dismissButton = {
                 TextButton(onClick = { showAllFilesDialog = false }) { Text("Not now") }
             }
+        )
+    }
+
+    if (showMbtilesPicker) {
+        FilePickerDialog(
+            initialPath = "/storage/emulated/0",
+            fileExtension = ".mbtiles",
+            onFileSelected = { file ->
+                showMbtilesPicker = false
+                viewModel.importMbtilesFile(android.net.Uri.fromFile(file))
+            },
+            onDismiss = { showMbtilesPicker = false },
         )
     }
 
@@ -387,6 +395,43 @@ fun LibraryScreen(
                                 )
                             }
                         }
+                        // ── Active import progress (always visible below search bar) ──
+                        if (isImporting && importProgressText.isNotEmpty()) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text(
+                                    text = importProgressText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(bottom = 2.dp),
+                                )
+                                if (importProgressFraction > 0f) {
+                                    LinearProgressIndicator(
+                                        progress = { importProgressFraction },
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                    )
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp))
+                                }
+                            }
+                        }
+                        if (isMbtilesImporting && mbtilesImportProgressText.isNotEmpty()) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text(
+                                    text = mbtilesImportProgressText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(bottom = 2.dp),
+                                )
+                                if (mbtilesImportProgressFraction > 0f) {
+                                    LinearProgressIndicator(
+                                        progress = { mbtilesImportProgressFraction },
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                    )
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp))
+                                }
+                            }
+                        }
                     }
                 }
                 is LibrarySelectionMode.GroupSelection -> {
@@ -463,7 +508,16 @@ fun LibraryScreen(
             ),
         ) {
             // ── Map Layers ────────────────────────────────────────────────
-            item(key = "map-layers-header") { SectionHeader("Map Layers") }
+            item(key = "map-layers-header") {
+                SectionHeaderWithAction(
+                    title = "Map Layers",
+                    isLoading = isMbtilesImporting,
+                    onAction = {
+                        if (hasAllFilesPermission) showMbtilesPicker = true
+                        else showAllFilesDialog = true
+                    },
+                )
+            }
             item(key = "map-layer-satellite") {
                 MapLayerRow(
                     label = "Satellite",
@@ -489,36 +543,6 @@ fun LibraryScreen(
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             }
 
-            // ── Raster Layers ─────────────────────────────────────────────
-            item(key = "raster-layers-header") {
-                SectionHeaderWithAction(
-                    title = "Raster Layers",
-                    isLoading = isMbtilesImporting,
-                    onAction = { mbtilesFileLauncher.launch("*/*") },
-                )
-            }
-            if (isMbtilesImporting && mbtilesImportProgressText.isNotEmpty()) {
-                item(key = "raster-import-progress") {
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                        Text(
-                            text = mbtilesImportProgressText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(bottom = 2.dp),
-                        )
-                        if (mbtilesImportProgressFraction > 0f) {
-                            LinearProgressIndicator(
-                                progress = { mbtilesImportProgressFraction },
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                            )
-                        } else {
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                            )
-                        }
-                    }
-                }
-            }
             items(rasterLayers, key = { "raster-${it.id}" }) { layer ->
                 RasterLayerRow(
                     layer = layer,
@@ -541,26 +565,6 @@ fun LibraryScreen(
                             else showAllFilesDialog = true
                         },
                     )
-                    if (isImporting && importProgressText.isNotEmpty()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                            Text(
-                                text = importProgressText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(bottom = 2.dp),
-                            )
-                            if (importProgressFraction > 0f) {
-                                LinearProgressIndicator(
-                                    progress = { importProgressFraction },
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                                )
-                            }
-                        }
-                    }
                 }
                 googlePlacesGroup?.let { group ->
                     item(key = "places-group") {
@@ -805,14 +809,16 @@ private fun SectionHeaderWithAction(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp, top = 16.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(end = 4.dp),
+        verticalAlignment = Alignment.Top,
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
         )
         IconButton(onClick = onAction, enabled = !isLoading) {
             if (isLoading) {
@@ -864,19 +870,19 @@ private fun RasterLayerRow(
         headlineContent = { Text(layer.name, style = MaterialTheme.typography.bodyLarge) },
         trailingContent = {
             Row {
+                IconButton(onClick = { showDeleteDialog = true }) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete layer",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
                 IconButton(onClick = onToggleVisibility) {
                     Icon(
                         imageVector = if (layer.isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         contentDescription = if (layer.isVisible) "Hide layer" else "Show layer",
                         tint = if (layer.isVisible) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    )
-                }
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete layer",
-                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
