@@ -44,8 +44,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.DestinationSource
+import com.mappingsolution.data.model.MediaUtils
 import com.mappingsolution.data.model.PlanDestination
-import com.mappingsolution.ui.poi.media.PoiMediaGallery
+import com.mappingsolution.ui.poi.PoiInfoBlock
+import com.mappingsolution.ui.poi.PoiMediaPager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -147,44 +149,26 @@ private fun PoiDetailContent(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 12.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
-            LabeledField("Name", poi.name)
-
-            if (!poi.description.isNullOrBlank()) {
-                LabeledField("Description", poi.description)
-            }
-
-            LabeledField("Group", item.group?.name ?: "No group")
-
-            LabeledField("Location", "%.6f, %.6f".format(poi.lat, poi.lng))
-
-            LabeledField(
-                label = "Added",
-                value = formatDate(poi.createdAt),
-            )
-
             if (item.mediaPaths.isNotEmpty()) {
                 val mediaItems = item.mediaPaths.mapIndexed { index, path ->
-                    com.mappingsolution.data.model.MediaUtils.createMediaItem(path, index)
+                    MediaUtils.createMediaItem(path, index)
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Media",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    PoiMediaGallery(
-                        mediaItems = mediaItems,
-                        onItemClick = { index -> onOpenMediaPreview(poi.id, index, item.mediaPaths) },
-                        onRemoveItem = { index -> onRemoveMedia(index) },
-                        allowRemove = !isReadOnly,
-                    )
-                }
+                PoiMediaPager(
+                    mediaItems = mediaItems,
+                    onItemClick = { index -> onOpenMediaPreview(poi.id, index, item.mediaPaths) },
+                )
             }
+
+            PoiInfoBlock(
+                poi = poi,
+                group = item.group,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp, bottom = 100.dp),
+            )
         }
 
         if (fromSearch) {

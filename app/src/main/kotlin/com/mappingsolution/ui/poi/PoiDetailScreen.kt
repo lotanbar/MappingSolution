@@ -1,9 +1,7 @@
 package com.mappingsolution.ui.poi
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,37 +12,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.mappingsolution.data.model.MediaItem
-import com.mappingsolution.data.model.MediaType
-import com.mappingsolution.ui.poi.media.PoiMediaGallery
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.mappingsolution.data.model.MediaUtils
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PoiDetailScreen(
     onNavigateBack: () -> Unit,
@@ -54,18 +40,7 @@ fun PoiDetailScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(state.poi?.name ?: "POI") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        }
-    ) { padding ->
+    Scaffold { padding ->
         if (state.isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -87,46 +62,26 @@ fun PoiDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 12.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    .verticalScroll(rememberScrollState()),
             ) {
-                LabeledField("Name", poi.name)
-
-                if (!poi.description.isNullOrBlank()) {
-                    LabeledField("Description", poi.description)
-                }
-
-                LabeledField("Group", state.group?.name ?: "No group")
-
-                LabeledField("Location", "%.6f, %.6f".format(poi.lat, poi.lng))
-
-                LabeledField(
-                    label = "Added",
-                    value = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
-                        .format(Date(poi.createdAt)),
-                )
-
                 if (state.mediaPaths.isNotEmpty()) {
                     val mediaItems = state.mediaPaths.mapIndexed { index, path ->
-                        com.mappingsolution.data.model.MediaUtils.createMediaItem(path, index)
+                        MediaUtils.createMediaItem(path, index)
                     }
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "Media",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                        PoiMediaGallery(
-                            mediaItems = mediaItems,
-                            onItemClick = { index -> onOpenMediaPreview(poi.id, index, state.mediaPaths) },
-                            onRemoveItem = { index -> viewModel.removeMediaItem(index) }
-                        )
-                    }
+                    PoiMediaPager(
+                        mediaItems = mediaItems,
+                        onItemClick = { index -> onOpenMediaPreview(poi.id, index, state.mediaPaths) },
+                    )
                 }
+
+                PoiInfoBlock(
+                    poi = poi,
+                    group = state.group,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 16.dp, bottom = 100.dp),
+                )
             }
 
             Surface(
@@ -135,7 +90,7 @@ fun PoiDetailScreen(
                 shadowElevation = 8.dp,
             ) {
                 Column {
-                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val context = LocalContext.current
                     var lastDeleteClickTime by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0L) }
                     Button(
                         onClick = { onNavigateToEdit(poi.id) },
@@ -177,18 +132,5 @@ fun PoiDetailScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun LabeledField(label: String, value: String) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(text = value, style = MaterialTheme.typography.bodyLarge)
     }
 }
