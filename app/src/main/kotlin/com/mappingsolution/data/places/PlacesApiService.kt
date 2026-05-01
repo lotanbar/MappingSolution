@@ -170,7 +170,39 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
     }
 
     /**
-     * Fetches up to 3 photo URLs for a specific place by ID.
+     * Fetches website and phone number for a specific place by ID.
+     * Returns null if the place has neither field or the API call fails.
+     */
+    suspend fun fetchPlaceContactInfo(placeId: String): PlaceContactInfo? {
+        val apiKey = BuildConfig.GOOGLE_PLACES_API_KEY
+        if (apiKey.isBlank()) return null
+
+        val request = Request.Builder()
+            .url("$detailBaseUrl/$placeId")
+            .addHeader("X-Goog-Api-Key", apiKey)
+            .addHeader("X-Goog-FieldMask", "websiteUri,nationalPhoneNumber")
+            .get()
+            .build()
+
+        return runCatching {
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e("PlacesApiService", "fetchPlaceContactInfo HTTP ${response.code}")
+                    return@runCatching null
+                }
+                val json = JSONObject(response.body!!.string())
+                val website = json.optString("websiteUri").ifEmpty { null }
+                val phone = json.optString("nationalPhoneNumber").ifEmpty { null }
+                if (website == null && phone == null) null else PlaceContactInfo(website, phone)
+            }
+        }.getOrElse { e ->
+            Log.e("PlacesApiService", "fetchPlaceContactInfo failed", e)
+            null
+        }
+    }
+
+    /**
+     * Fetches all available photo URLs for a specific place by ID.
      * Photo URL format: https://places.googleapis.com/v1/{photoName}/media?maxWidthPx=800&key={key}
      */
     suspend fun fetchPlacePhotoUrls(placeId: String): List<String> {
@@ -192,7 +224,7 @@ class PlacesApiService @Inject constructor(private val httpClient: OkHttpClient)
                 }
                 val json = JSONObject(response.body!!.string())
                 val photos = json.optJSONArray("photos") ?: return@runCatching emptyList()
-                (0 until minOf(photos.length(), 3)).mapNotNull { i ->
+                (0 until photos.length()).mapNotNull { i ->
                     runCatching {
                         val photoName = photos.getJSONObject(i).getString("name")
                         // photoName = "places/{id}/photos/{ref}" — base is v1, not v1/places

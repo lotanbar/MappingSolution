@@ -40,6 +40,27 @@ class GooglePlacesRepository @Inject constructor(
     suspend fun fetchPhotoUrls(placeId: String): List<String> =
         withContext(Dispatchers.IO) { api.fetchPlacePhotoUrls(placeId) }
 
+    /** Fetches website and phone for a known Google Place ID. */
+    suspend fun fetchContactInfo(placeId: String): PlaceContactInfo? =
+        withContext(Dispatchers.IO) { api.fetchPlaceContactInfo(placeId) }
+
+    /**
+     * Searches for a Google Place matching [name] near [lat]/[lng] (100 m radius),
+     * then fetches its contact details. Returns null if no match or fetch fails.
+     * Used to enrich OSM POIs with website/phone data.
+     */
+    suspend fun findContactInfoNear(
+        name: String,
+        lat: Double,
+        lng: Double,
+    ): PlaceContactInfo? = withContext(Dispatchers.IO) {
+        val matches = runCatching {
+            api.searchText(name, lat, lng, radiusMeters = 100.0)
+        }.getOrElse { return@withContext null }
+        val placeId = matches.firstOrNull()?.id ?: return@withContext null
+        api.fetchPlaceContactInfo(placeId)
+    }
+
     /**
      * Fetches Google Places POIs for the given viewport bounds using strip-based fetching.
      *

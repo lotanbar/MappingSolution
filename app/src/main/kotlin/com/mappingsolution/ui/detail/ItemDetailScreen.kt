@@ -1,5 +1,7 @@
 package com.mappingsolution.ui.detail
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +30,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -40,14 +45,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mappingsolution.data.model.DestinationSource
 import com.mappingsolution.data.model.MediaUtils
 import com.mappingsolution.data.model.PlanDestination
+import com.mappingsolution.ui.common.IconCatalog
 import com.mappingsolution.ui.poi.PoiInfoBlock
 import com.mappingsolution.ui.poi.PoiMediaPager
+import com.mappingsolution.ui.searchnplan.NavigationIntentHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -101,6 +110,9 @@ fun ItemDetailScreen(
                 modifier = Modifier.padding(padding),
                 isReadOnly = item.isReadOnly,
                 fromSearch = fromSearch,
+                website = state.website,
+                phone = state.phone,
+                isContactInfoLoading = state.isContactInfoLoading,
                 onNavigateBack = onNavigateBack,
                 onNavigateToEdit = onNavigateToEditPoi,
                 onOpenMediaPreview = onOpenMediaPreview,
@@ -129,6 +141,9 @@ private fun PoiDetailContent(
     modifier: Modifier = Modifier,
     isReadOnly: Boolean = false,
     fromSearch: Boolean = false,
+    website: String? = null,
+    phone: String? = null,
+    isContactInfoLoading: Boolean = false,
     onNavigateBack: () -> Unit,
     onNavigateToEdit: (poiId: String) -> Unit,
     onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
@@ -141,6 +156,20 @@ private fun PoiDetailContent(
     val poi = item.poi
     var lastDeleteClickTime by remember { mutableStateOf(0L) }
 
+    if (isReadOnly && !fromSearch) {
+        ReadOnlyPoiFullLayout(
+            item = item,
+            modifier = modifier,
+            website = website,
+            phone = phone,
+            isContactInfoLoading = isContactInfoLoading,
+            onOpenMediaPreview = onOpenMediaPreview,
+            context = context,
+        )
+        return
+    }
+
+    val galleryHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -154,6 +183,7 @@ private fun PoiDetailContent(
                 PoiMediaPager(
                     mediaItems = mediaItems,
                     onItemClick = { index -> onOpenMediaPreview(poi.id, index, item.mediaPaths) },
+                    modifier = Modifier.height(galleryHeight),
                 )
             }
 
@@ -163,7 +193,7 @@ private fun PoiDetailContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp, bottom = 100.dp),
+                    .padding(top = 16.dp, bottom = 90.dp),
             )
         }
 
@@ -299,6 +329,113 @@ private fun SearchContextBottomBar(
                 modifier = Modifier.weight(1f).height(52.dp),
             ) {
                 Text("Add to Plan")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadOnlyPoiFullLayout(
+    item: DetailItem.PoiDetail,
+    modifier: Modifier = Modifier,
+    website: String?,
+    phone: String?,
+    isContactInfoLoading: Boolean,
+    onOpenMediaPreview: (poiId: String, index: Int, paths: List<String>) -> Unit,
+    context: android.content.Context,
+) {
+    val poi = item.poi
+    val group = item.group
+    val mediaItems = item.mediaPaths.mapIndexed { index, path ->
+        MediaUtils.createMediaItem(path, index)
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (mediaItems.isNotEmpty()) {
+            PoiMediaPager(
+                mediaItems = mediaItems,
+                onItemClick = { index -> onOpenMediaPreview(poi.id, index, item.mediaPaths) },
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = poi.name,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            group?.let {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = IconCatalog.iconVector(it.iconKey),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = it.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { NavigationIntentHelper.launchSingleNavigation(context, poi.lat, poi.lng) },
+                    modifier = Modifier.weight(1f).height(64.dp),
+                ) {
+                    Icon(Icons.Default.Navigation, contentDescription = "Navigate", modifier = Modifier.size(28.dp))
+                }
+                OutlinedButton(
+                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(website))) },
+                    enabled = !isContactInfoLoading && website != null,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                ) {
+                    if (isContactInfoLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Language, contentDescription = "Website", modifier = Modifier.size(28.dp))
+                    }
+                }
+                OutlinedButton(
+                    onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) },
+                    enabled = !isContactInfoLoading && phone != null,
+                    modifier = Modifier.weight(1f).height(64.dp),
+                ) {
+                    if (isContactInfoLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Phone, contentDescription = "Phone", modifier = Modifier.size(28.dp))
+                    }
+                }
             }
         }
     }

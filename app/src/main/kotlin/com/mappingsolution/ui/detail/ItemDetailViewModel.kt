@@ -38,6 +38,9 @@ sealed interface DetailItem {
 data class ItemDetailState(
     val item: DetailItem? = null,
     val isLoading: Boolean = true,
+    val website: String? = null,
+    val phone: String? = null,
+    val isContactInfoLoading: Boolean = false,
 )
 
 @HiltViewModel
@@ -122,8 +125,11 @@ class ItemDetailViewModel @Inject constructor(
                     sourceType = DestinationSource.GOOGLE,
                 ),
                 isLoading = false,
+                isContactInfoLoading = true,
             )
         }
+        val contact = runCatching { googlePlacesRepository.fetchContactInfo(id) }.getOrElse { null }
+        _state.update { it.copy(website = contact?.website, phone = contact?.phone, isContactInfoLoading = false) }
     }
 
     private suspend fun loadOsmPoi() {
@@ -142,8 +148,13 @@ class ItemDetailViewModel @Inject constructor(
                     sourceType = DestinationSource.OSM,
                 ),
                 isLoading = false,
+                isContactInfoLoading = true,
             )
         }
+        val contact = runCatching {
+            googlePlacesRepository.findContactInfoNear(poi.name, poi.lat, poi.lng)
+        }.getOrElse { null }
+        _state.update { it.copy(website = contact?.website, phone = contact?.phone, isContactInfoLoading = false) }
     }
 
     private suspend fun loadRoute() {

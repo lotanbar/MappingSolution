@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -27,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,7 +41,8 @@ import java.io.File
 import kotlin.random.Random
 
 /**
- * Full-width swipeable image/media pager occupying 65% of screen height.
+ * Full-width swipeable image/media pager. The caller controls the height via [modifier]
+ * (e.g. Modifier.height(X) for the editable path or Modifier.weight(1f) for full-screen layouts).
  */
 @Composable
 fun PoiMediaPager(
@@ -51,14 +50,12 @@ fun PoiMediaPager(
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val galleryHeight = LocalConfiguration.current.screenHeightDp.dp * 0.65f
     val pagerState = rememberPagerState(pageCount = { mediaItems.size })
     val context = LocalContext.current
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(galleryHeight)
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         HorizontalPager(
@@ -101,7 +98,7 @@ fun PoiMediaPager(
                                 .build(),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                         )
                         if (item.type == MediaType.VIDEO) {
                             Icon(
